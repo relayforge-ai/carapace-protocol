@@ -99,7 +99,7 @@ import { CarapaceClient } from 'carapace-sdk';
 const client = new CarapaceClient({
   registryUrl: process.env.CARAPACE_REGISTRY_URL
     ?? 'https://api.relayforge.tools/aria/v1',
-  ownerKey: process.env.CARAPACE_OWNER_KEY,
+  ownerKey: process.env.CARAPACE_OWNER_KEY!,  // required — throws if undefined
 });
 ```
 
@@ -175,7 +175,7 @@ An Agent Card is a signed JSON document that describes an agent: who owns it, wh
 
 ```json
 {
-  "id": "a3f7...",
+  "id": "a3f7b2c1-9e4d-4a8f-b6d2-1c3e5f7a9b0d",
   "name": "ResearchAgent",
   "description": "Searches and summarizes topics",
   "framework": "langchain",
@@ -197,9 +197,13 @@ An Agent Card is a signed JSON document that describes an agent: who owns it, wh
 
 Every card is signed using Ed25519 (FIPS 186-5 / RFC 8032) over a JCS-canonical (RFC 8785) representation of the payload. JCS canonicalization means the signature is stable regardless of key ordering or whitespace variation in the JSON.
 
+**Signed payload:** The signature covers all card fields **except** `signature` and `status`. These two fields are excluded from the canonical representation before signing. This means:
+- The registry can update `status` (e.g., to `"revoked"`) without invalidating the signature.
+- The `signature` field itself is naturally excluded (it cannot be part of its own input).
+
 What this guarantees:
 
-- **Tamper evidence** — any modification to the card after signing invalidates the signature
+- **Tamper evidence** — any modification to a signed field after signing invalidates the signature
 - **Owner binding** — only the holder of the private key could have produced the signature
 - **Offline verifiability** — verification requires only the card, the signature, and the public key
 
@@ -219,6 +223,18 @@ What ARIA does:
 ARIA is queried at runtime by agents and host systems. It is developer-accessible with no enterprise gating.
 
 Self-hosting is supported — point `registry_url` at your own ARIA-compatible endpoint.
+
+### Attestations
+
+Attestations are signed statements from third-party evaluators appended to an Agent Card. They allow independent parties (auditors, certification bodies, automated test suites) to vouch for specific properties of an agent without modifying the original card or its signature.
+
+An attestation contains:
+- `evaluator` — identifier of the attesting party (public key or registry ID)
+- `claim` — a structured statement (e.g., `{"capability": "research", "level": "verified"}`)
+- `signature` — Ed25519 signature over the JCS-canonical attestation payload, produced by the evaluator's key
+- `timestamp` — ISO 8601 time of attestation
+
+Attestations are stored alongside the card in ARIA and returned with `client.get()` and `client.verify()` responses. They do not affect the card's own signature. Attestation APIs are forthcoming — see the [issue tracker](https://github.com/ryan10sa-star/carapace-protocol/issues) for status.
 
 ---
 
@@ -271,6 +287,11 @@ Returns `VerifyResult`.
 | `.reason` | `str \| None` | Failure reason. `None` on success. |
 | `.agent` | `AgentCard \| None` | Full card if verified. |
 
+**Error behavior:**
+- If `agent_id` does not exist in the registry, returns `VerifyResult(verified=False, reason="agent_not_found", agent=None)`.
+- If the registry is unreachable, raises a `ConnectionError` (Python) or rejects with a network error (TypeScript).
+- Each call makes a fresh request to ARIA — results are not cached.
+
 ### `client.verify_local(card, signature, public_key)`
 
 Ed25519 verification with no network call. Returns `bool`.
@@ -281,7 +302,7 @@ Ed25519 verification with no network call. Returns `bool`.
 |---|---|---|
 | `capability` | `str` | Filter by capability id. |
 | `framework` | `str` | Filter by framework. |
-| `tag` | `str` | Filter by tag. |
+| `tag` | `str` | Filter by a single tag (matches any tag in the agent's `tags` list). |
 | `text` | `str` | Full-text search. |
 | `limit` | `int` | Max results. Default: `20`. |
 
@@ -295,6 +316,42 @@ Fetch a card by UUID. Returns `AgentCard`.
 
 Return the hex-encoded public key derived from your owner key. Returns `str`.
 
+### `generate_tools_list(card)`
+
+Convert an `AgentCard` into an MCP-compatible `tools/list` response object.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `card` | `AgentCard` | Yes | The agent card to convert. |
+
+Returns a `dict` (Python) or plain object (TypeScript) conforming to the MCP `tools/list` schema.
+
+### `generate_well_known_card(card)`
+
+Convert an `AgentCard` into an A2A-compatible `/.well-known/agent.json` document.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `card` | `AgentCard` | Yes | The agent card to convert. |
+
+Returns a `dict` (Python) or plain object (TypeScript) conforming to the A2A agent card schema.
+
+### TypeScript API
+
+The TypeScript SDK mirrors the Python API with idiomatic naming conventions:
+
+| Python | TypeScript |
+|---|---|
+| `CarapaceClient(registry_url=..., owner_private_key=...)` | `new CarapaceClient({ registryUrl, ownerKey })` |
+| `client.register(name=..., ...)` | `client.register({ name, ... })` |
+| `client.verify(agent_id=...)` | `client.verify(agentId)` |
+| `client.verify_local(card, signature, public_key)` | `client.verifyLocal(card, signature, publicKey)` |
+| `client.discover(capability=...)` | `client.discover({ capability })` |
+| `client.get(agent_id)` | `client.get(agentId)` |
+| `client.public_key()` | `client.publicKey()` |
+| `generate_tools_list(card)` | `generateToolsList(card)` |
+| `generate_well_known_card(card)` | `generateWellKnownCard(card)` |
+
 ---
 
 ## MCP Integration
@@ -307,7 +364,7 @@ from carapace.integrations.mcp import CarapaceMiddleware
 from mcp.server import Server
 
 server = Server("my-mcp-server")
-server = CarapaceMiddleware(
+secure_server = CarapaceMiddleware(
     server,
     client=client,
     agent_id="uuid-of-registered-agent"
@@ -392,7 +449,7 @@ a2a_card = generate_well_known_card(card)
 |---|---|
 | Ed25519 | FIPS 186-5, RFC 8032 |
 | JSON Canonicalization | RFC 8785 (JCS) |
-| NIST AI RMF 1.0 | GOVERN, MANAGE, MAP, MEASURE |
+| NIST AI RMF 1.0 | GOVERN, MAP, MEASURE, MANAGE |
 | ISA/IEC 62443 | Industrial cybersecurity |
 | A2A Protocol | Native manifest output |
 | MCP Protocol | Native tools/list output |
@@ -418,7 +475,7 @@ To report a vulnerability: open a security advisory on this repository or email 
 ## Contributing
 
 ```bash
-git clone https://github.com/relayforge/carapace-protocol
+git clone https://github.com/ryan10sa-star/carapace-protocol
 cd carapace-protocol
 
 # Python
