@@ -1,0 +1,20 @@
+{
+  "name": "@carapace/sdk",
+  "version": "0.3.0",
+  "description": "Portable trust envelope for AI agents — enforcement, expiry, versioning, delegation chains",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": ["carapace", "agent", "trust", "delegation", "capabilities"],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
