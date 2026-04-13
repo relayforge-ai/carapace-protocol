@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carapace-sdk"
+version = "0.3.0"
+description = "Carapace Protocol SDK — cryptographic identity and trust for AI agents"
+readme = "../../README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "Ryan Anderson", email = "ryan@relayforge.tools"}]
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=41.0.0",
+    "canonicaljson>=2.0.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["carapace*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
