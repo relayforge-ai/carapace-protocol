@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.relayforge.tools/aria/v1/schemas/capability-taxonomy/v0.1.0",
+  "title": "Carapace Capability Taxonomy",
+  "description": "Controlled vocabulary of agent capability scopes for the Carapace Protocol. Version 0.1.0. Capability IDs in this taxonomy are machine-readable, hierarchical, and carry defined permission implications. Free-text capability IDs are still permitted but will not receive automated scope enforcement.",
+  "version": "0.1.0",
+  "issued": "2026-03",
+  "issuer": "RelayForge — https://relayforge.tools",
+  "namespaces": {
+    "carapace": {
+      "description": "Official Carapace capability namespace. Maintained by RelayForge.",
+      "prefix": "carapace:",
+      "scopes": {
+
+        "read": {
+          "description": "Read-only access to external resources. No mutations, no side effects.",
+          "children": {
+            "carapace:read:web": {
+              "description": "Fetch publicly accessible web content via HTTP/HTTPS GET.",
+              "examples": ["Web scraping", "RSS feeds", "Public API reads"],
+              "side_effects": "none",
+              "data_sensitivity": "low",
+              "reversible": true
+            },
+            "carapace:read:filesystem": {
+              "description": "Read files from a defined path scope on the host filesystem.",
+              "examples": ["Reading config files", "Parsing uploaded documents"],
+              "side_effects": "none",
+              "data_sensitivity": "medium",
+              "reversible": true,
+              "requires_scope_declaration": true
+            },
+            "carapace:read:database": {
+              "description": "Execute read-only queries against a database.",
+              "examples": ["SELECT queries", "Schema inspection"],
+              "side_effects": "none",
+              "data_sensitivity": "high",
+              "reversible": true,
+              "requires_scope_declaration": true
+            },
+            "carapace:read:email": {
+              "description": "Read email messages from a mailbox.",
+              "examples": ["IMAP read", "Gmail API list/get"],
+              "side_effects": "may mark messages as read",
+              "data_sensitivity": "high",
+              "reversible": false
+            },
+            "carapace:read:calendar": {
+              "description": "Read calendar events and availability.",
+              "examples": ["Google Calendar read", "Outlook Calendar read"],
+              "side_effects": "none",
+              "data_sensitivity": "medium",
+              "reversible": true
+            },
+            "carapace:read:memory": {
+              "description": "Read from agent long-term memory or vector store.",
+              "examples": ["Semantic search over past conversations"],
+              "side_effects": "none",
+              "data_sensitivity": "medium",
+              "reversible": true
+            }
+          }
+        },
+
+        "write": {
+          "description": "Mutating access. Creates, modifies, or deletes external state.",
+          "children": {
+            "carapace:write:filesystem": {
+              "description": "Write, create, or modify files within a declared path scope.",
+              "examples": ["Writing output files", "Creating reports"],
+              "side_effects": "persistent",
+              "data_sensitivity": "medium",
+              "reversible": false,
+              "requires_scope_declaration": true
+            },
+            "carapace:write:database": {
+              "description": "Execute write operations against a database (INSERT, UPDATE, DELETE).",
+              "examples": ["Updating records", "Inserting new rows"],
+              "side_effects": "persistent",
+              "data_sensitivity": "high",
+              "reversible": false,
+              "requires_scope_declaration": true
+            },
+            "carapace:write:email": {
+              "description": "Compose and send email messages.",
+              "examples": ["Sending notifications", "Drafting replies"],
+              "side_effects": "persistent, externally visible",
+              "data_sensitivity": "high",
+              "reversible": false
+            },
+            "carapace:write:calendar": {
+              "description": "Create, modify, or delete calendar events.",
+              "examples": ["Scheduling meetings", "Updating appointments"],
+              "side_effects": "persistent, may notify attendees",
+              "data_sensitivity": "medium",
+              "reversible": false
+            },
+            "carapace:write:memory": {
+              "description": "Write to agent long-term memory or vector store.",
+              "examples": ["Storing conversation summaries", "Updating knowledge base"],
+              "side_effects": "persistent",
+              "data_sensitivity": "medium",
+              "reversible": false
+            }
+          }
+        },
+
+        "execute": {
+          "description": "Execution capabilities. Highest privilege tier — requires explicit justification.",
+          "children": {
+            "carapace:execute:shell": {
+              "description": "Execute shell commands on the host system.",
+              "examples": ["Running scripts", "System automation"],
+              "side_effects": "arbitrary — treat as unrestricted system access",
+              "data_sensitivity": "critical",
+              "reversible": false,
+              "risk_level": "critical",
+              "requires_attestation": true
+            },
+            "carapace:execute:code": {
+              "description": "Execute arbitrary code in a sandboxed runtime.",
+              "examples": ["Python interpreter", "JavaScript eval", "Code generation + run"],
+              "side_effects": "sandbox-dependent",
+              "data_sensitivity": "high",
+              "reversible": false,
+              "risk_level": "high",
+              "requires_attestation": true
+            },
+            "carapace:execute:api": {
+              "description": "Call external APIs with side-effectful operations (POST, PUT, DELETE, PATCH).",
+              "examples": ["Creating Jira tickets", "Triggering webhooks", "Stripe charges"],
+              "side_effects": "external, persistent",
+              "data_sensitivity": "variable",
+              "reversible": false,
+              "requires_scope_declaration": true
+            },
+            "carapace:execute:process_control": {
+              "description": "Interact with industrial control systems, PLCs, SCADA, or OT environments.",
+              "examples": ["Modbus reads/writes", "OPC-UA operations", "DCS parameter changes"],
+              "side_effects": "physical — may affect real-world systems",
+              "data_sensitivity": "critical",
+              "reversible": false,
+              "risk_level": "critical",
+              "requires_attestation": true,
+              "notes": "Industrial use only. Requires ISA/IEC 62443 alignment attestation."
+            }
+          }
+        },
+
+        "communicate": {
+          "description": "Agent-to-agent and agent-to-human communication capabilities.",
+          "children": {
+            "carapace:communicate:a2a": {
+              "description": "Send tasks or messages to other A2A-registered agents.",
+              "examples": ["Delegating subtasks", "Multi-agent orchestration"],
+              "side_effects": "triggers downstream agent actions",
+              "data_sensitivity": "medium",
+              "reversible": false
+            },
+            "carapace:communicate:mcp": {
+              "description": "Call tools exposed via MCP servers.",
+              "examples": ["Using MCP tool registry", "Tool invocation chains"],
+              "side_effects": "tool-dependent",
+              "data_sensitivity": "variable",
+              "reversible": false
+            },
+            "carapace:communicate:human": {
+              "description": "Send messages, notifications, or alerts to human operators.",
+              "examples": ["Slack messages", "SMS alerts", "Email notifications"],
+              "side_effects": "externally visible",
+              "data_sensitivity": "medium",
+              "reversible": false
+            }
+          }
+        },
+
+        "observe": {
+          "description": "Monitoring and telemetry capabilities. Read-only but continuous.",
+          "children": {
+            "carapace:observe:logs": {
+              "description": "Read system, application, or audit logs.",
+              "examples": ["Log aggregation", "Error monitoring"],
+              "side_effects": "none",
+              "data_sensitivity": "medium",
+              "reversible": true
+            },
+            "carapace:observe:metrics": {
+              "description": "Read system or application performance metrics.",
+              "examples": ["Prometheus scrape", "Datadog read"],
+              "side_effects": "none",
+              "data_sensitivity": "low",
+              "reversible": true
+            },
+            "carapace:observe:process": {
+              "description": "Monitor industrial process variables (read-only).",
+              "examples": ["Reading pressure, flow, temperature from DCS"],
+              "side_effects": "none",
+              "data_sensitivity": "medium",
+              "reversible": true,
+              "notes": "Read-only counterpart to carapace:execute:process_control."
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "risk_levels": {
+    "low":      "No external side effects. Read-only or sandboxed.",
+    "medium":   "External reads or minor persistent writes. Reversible in most cases.",
+    "high":     "Persistent external mutations. Hard to reverse.",
+    "critical": "Physical effects, unrestricted execution, or safety-system interaction."
+  },
+
+  "scope_declaration": {
+    "description": "Capabilities marked requires_scope_declaration must include a scope object in the capability definition specifying which resources the agent is authorized to access.",
+    "example": {
+      "id": "carapace:read:filesystem",
+      "name": "Filesystem Reader",
+      "description": "Reads instrument calibration records",
+      "scope": {
+        "paths": ["/data/calibration/", "/data/maintenance/"],
+        "readonly": true
+      }
+    }
+  },
+
+  "attestation_requirement": {
+    "description": "Capabilities marked requires_attestation must carry a signed third-party attestation in the agent card before the capability is considered credentialed (vs. merely declared).",
+    "required_for": [
+      "carapace:execute:shell",
+      "carapace:execute:code",
+      "carapace:execute:process_control"
+    ]
+  },
+
+  "versioning": {
+    "policy": "Capability IDs are stable once published. New scopes are additive. Deprecated scopes are marked deprecated for two minor versions before removal. Breaking changes require a major version bump and advance notice.",
+    "current_version": "0.1.0",
+    "stability": "draft — open for community feedback before 1.0.0 freeze"
+  },
+
+  "contributing": {
+    "description": "To propose a new capability scope, open an issue at github.com/relayforge/carapace-protocol with the prefix 'Taxonomy:'. Include: proposed ID, description, side effects, data sensitivity, reversibility, and at least two real-world use cases.",
+    "governance": "RelayForge maintains the carapace: namespace. Third parties may define their own namespaces using reverse-domain notation (e.g., com.acme:read:proprietary-system)."
+  }
+}
