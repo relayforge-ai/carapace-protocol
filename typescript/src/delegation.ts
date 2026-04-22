@@ -1,33 +1,17 @@
 /**
- * Carapace v0.3 — Delegation Chains (TypeScript)
- *
- * When Agent A spawns Agent B for a subtask, Agent B should operate with a
- * subset of Agent A's capabilities — never more.
- *
- * Usage:
- *   import { createDelegation, verifyDelegation, verifyDelegationChain } from './delegation';
- *
- *   const token = createDelegation({
- *     delegatorCard: agentACard,
- *     delegateCardId: 'agent-b-uuid',
- *     capabilities: ['carapace:read:email'],
- *     ttlHours: 4,
- *   });
- *
- *   const result = verifyDelegation(token, agentACard);
- *   const chainResult = verifyDelegationChain([tokenAB, tokenBC], rootCard);
+ * Carapace v0.3 — Delegation Chains (TypeScript mirror of delegation.py)
  */
 
-import type { CardLike, Capability } from './enforce';
-import { hasCapability } from './enforce';
+import { hasCapability, extractCapabilityIds, CardLike } from "./enforce";
+import { parseExpiresAt, isExpired } from "./expiry";
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 export const MAX_CHAIN_DEPTH = 5;
 export const DEFAULT_MAX_TTL_HOURS = 24;
 export const DEFAULT_REDELEGATION_DEPTH = 2;
 
-// ── Errors ───────────────────────────────────────────────────────────────────
+// ── Errors ────────────────────────────────────────────────────────────────────
 
 export class DelegationError extends Error {
   constructor(message: string) {

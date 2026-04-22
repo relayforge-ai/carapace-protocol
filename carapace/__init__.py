@@ -1,0 +1,103 @@
+"""Carapace SDK v0.3.0 — Portable Trust Envelope for AI Agents"""
+
+from .enforce import (
+    CapabilityDenied,
+    CardExpired,
+    CardLike,
+    EnforcementPolicy,
+    enforce,
+    enforce_all,
+    enforce_any,
+    has_capability,
+    require_capability,
+)
+from .expiry import (
+    ExpiryStatus,
+    check_expiry,
+    is_expired,
+    make_expires_at,
+    parse_expires_at,
+    time_remaining,
+    validate_expiry_for_verify,
+)
+from .versioning import (
+    OwnerMismatchError,
+    SupersedesNotFoundError,
+    VersionChain,
+    VersionChainError,
+    VersionEntry,
+    VersionSequenceError,
+    prepare_version_fields,
+    validate_supersedes_registration,
+    validate_version_chain,
+)
+from .delegation import (
+    CapabilityEscalation,
+    DelegationChainBroken,
+    DelegationError,
+    DelegationExpired,
+    DelegationToken,
+    DelegationVerifyResult,
+    DelegatorCardInvalid,
+    RedelegationDepthExceeded,
+    SignatureInvalid,
+    TTLExceedsDelegator,
+    create_delegation,
+    enforce_delegated,
+    narrow_capabilities,
+    redelegate,
+    validate_capability_subset,
+    verify_delegation,
+    verify_delegation_chain,
+)
+
+__version__ = "0.3.0"
+
+__all__ = [
+    # enforce
+    "CapabilityDenied",
+    "CardExpired",
+    "CardLike",
+    "EnforcementPolicy",
+    "enforce",
+    "enforce_all",
+    "enforce_any",
+    "has_capability",
+    "require_capability",
+    # expiry
+    "ExpiryStatus",
+    "check_expiry",
+    "is_expired",
+    "make_expires_at",
+    "parse_expires_at",
+    "time_remaining",
+    "validate_expiry_for_verify",
+    # versioning
+    "OwnerMismatchError",
+    "SupersedesNotFoundError",
+    "VersionChain",
+    "VersionChainError",
+    "VersionEntry",
+    "VersionSequenceError",
+    "prepare_version_fields",
+    "validate_supersedes_registration",
+    "validate_version_chain",
+    # delegation
+    "CapabilityEscalation",
+    "DelegationChainBroken",
+    "DelegationError",
+    "DelegationExpired",
+    "DelegationToken",
+    "DelegationVerifyResult",
+    "DelegatorCardInvalid",
+    "RedelegationDepthExceeded",
+    "SignatureInvalid",
+    "TTLExceedsDelegator",
+    "create_delegation",
+    "enforce_delegated",
+    "narrow_capabilities",
+    "redelegate",
+    "validate_capability_subset",
+    "verify_delegation",
+    "verify_delegation_chain",
+]
