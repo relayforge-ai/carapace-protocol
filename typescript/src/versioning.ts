@@ -1,176 +1,187 @@
 /**
- * Carapace v0.2 — Agent Card Versioning (TypeScript mirror of versioning.py)
+ * Carapace v0.2 — Agent Card Versioning (TypeScript)
+ *
+ * Usage:
+ *   import { validateVersionChain, prepareVersionFields } from './versioning';
+ *
+ *   const fields = prepareVersionFields(oldCard);
+ *   const chain = validateVersionChain([v1, v2, v3]);
  */
 
-// ── Errors ────────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export interface VersionedCard {
+  id: string;
+  version?: number;
+  supersedes?: string | null;
+  superseded_by?: string | null;
+  owner?: { public_key: string };
+  status?: string;
+  created_at?: string | null;
+}
+
+export interface VersionEntry {
+  cardId: string;
+  version: number;
+  supersedes: string | null;
+  supersededBy: string | null;
+  ownerPublicKey: string;
+  createdAt: string | null;
+  status: string;
+}
+
+// ── Errors ───────────────────────────────────────────────────────────────────
 
 export class VersionChainError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "VersionChainError";
+    this.name = 'VersionChainError';
   }
 }
 
 export class OwnerMismatchError extends VersionChainError {
   constructor(message: string) {
     super(message);
-    this.name = "OwnerMismatchError";
+    this.name = 'OwnerMismatchError';
   }
 }
 
 export class VersionSequenceError extends VersionChainError {
   constructor(message: string) {
     super(message);
-    this.name = "VersionSequenceError";
+    this.name = 'VersionSequenceError';
   }
 }
 
 export class SupersedesNotFoundError extends VersionChainError {
   constructor(message: string) {
     super(message);
-    this.name = "SupersedesNotFoundError";
+    this.name = 'SupersedesNotFoundError';
   }
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-export interface VersionEntry {
-  card_id: string;
-  version: number;
-  supersedes: string | null;
-  superseded_by: string | null;
-  owner_public_key: string;
-  created_at: string | null;
-  status: string;
+function toEntry(card: VersionedCard): VersionEntry {
+  return {
+    cardId: card.id,
+    version: card.version ?? 1,
+    supersedes: card.supersedes ?? null,
+    supersededBy: card.superseded_by ?? null,
+    ownerPublicKey: card.owner?.public_key ?? '',
+    createdAt: card.created_at ?? null,
+    status: card.status ?? 'active',
+  };
 }
 
-export interface VersionChainResult {
+// ── Version Chain ────────────────────────────────────────────────────────────
+
+export interface VersionChain {
   entries: VersionEntry[];
-  readonly length: number;
-  readonly current: VersionEntry | null;
-  readonly original: VersionEntry | null;
-  isValid(): boolean;
+  current: VersionEntry | null;
+  original: VersionEntry | null;
+  length: number;
+  isValid: boolean;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/**
+ * Validate that a set of cards forms a proper version chain.
+ *
+ * Checks:
+ * 1. Same owner across all versions
+ * 2. Monotonically increasing version numbers
+ * 3. Supersedes references point to valid predecessors
+ * 4. Exactly one original (supersedes = null)
+ */
+export function validateVersionChain(cards: VersionedCard[]): VersionChain {
+  if (cards.length === 0) {
+    return { entries: [], current: null, original: null, length: 0, isValid: true };
+  }
 
-function entryFromCard(card: Record<string, unknown>): VersionEntry {
-  const owner = (card.owner as Record<string, unknown>) ?? {};
-  return {
-    card_id: (card.id as string) ?? "",
-    version: (card.version as number) ?? 1,
-    supersedes: (card.supersedes as string | null) ?? null,
-    superseded_by: (card.superseded_by as string | null) ?? null,
-    owner_public_key: (owner.public_key as string) ?? "",
-    created_at: (card.created_at as string | null) ?? null,
-    status: (card.status as string) ?? "active",
-  };
-}
+  const entries = cards.map(toEntry).sort((a, b) => a.version - b.version);
 
-function makeChain(entries: VersionEntry[]): VersionChainResult {
-  return {
-    entries,
-    get length() { return entries.length; },
-    get current() {
-      if (!entries.length) return null;
-      return entries.reduce((a, b) => (a.version > b.version ? a : b));
-    },
-    get original() {
-      if (!entries.length) return null;
-      return entries.reduce((a, b) => (a.version < b.version ? a : b));
-    },
-    isValid() {
-      try {
-        validateVersionChain(entries);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-  };
-}
-
-// ── Validation ────────────────────────────────────────────────────────────────
-
-export function validateVersionChain(
-  entries: Array<VersionEntry | Record<string, unknown>>,
-): VersionChainResult {
-  const normalized: VersionEntry[] = entries.map((e) =>
-    "card_id" in e && typeof e.card_id === "string"
-      ? (e as VersionEntry)
-      : entryFromCard(e as Record<string, unknown>),
-  );
-
-  if (!normalized.length) return makeChain([]);
-
-  normalized.sort((a, b) => a.version - b.version);
-
-  const owners = new Set(normalized.map((e) => e.owner_public_key));
+  // Check single owner
+  const owners = new Set(entries.map((e) => e.ownerPublicKey));
   if (owners.size > 1) {
     throw new OwnerMismatchError(
-      `Version chain contains multiple owners. All versions must share the same owner key.`,
+      `Version chain contains multiple owners: ${[...owners].join(', ')}. All versions must share the same owner key.`,
     );
   }
 
-  for (let i = 0; i < normalized.length; i++) {
-    if (normalized[i].version < 1) {
+  // Check version sequence
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].version < 1) {
       throw new VersionSequenceError(
-        `Version must be >= 1, got ${normalized[i].version} for card ${normalized[i].card_id}`,
+        `Version must be >= 1, got ${entries[i].version} for card ${entries[i].cardId}`,
       );
     }
-    if (i > 0 && normalized[i].version <= normalized[i - 1].version) {
+    if (i > 0 && entries[i].version <= entries[i - 1].version) {
       throw new VersionSequenceError(
-        `Version ${normalized[i].version} is not greater than previous version ${normalized[i - 1].version}`,
+        `Version ${entries[i].version} is not greater than previous version ${entries[i - 1].version}`,
       );
     }
   }
 
-  const originals = normalized.filter((e) => e.supersedes === null);
+  // Check supersedes chain
+  const originals = entries.filter((e) => e.supersedes === null);
   if (originals.length !== 1) {
     throw new VersionChainError(
       `Expected exactly one original (supersedes=null), found ${originals.length}`,
     );
   }
-  if (originals[0] !== normalized[0]) {
+  if (originals[0] !== entries[0]) {
     throw new VersionChainError(
-      "The original card (supersedes=null) must be the lowest version",
+      'The original card (supersedes=null) must be the lowest version',
     );
   }
 
-  const cardIdSet = new Set(normalized.map((e) => e.card_id));
-  for (let i = 1; i < normalized.length; i++) {
-    const actual = normalized[i].supersedes;
-    const expectedPredecessor = normalized[i - 1].card_id;
-    if (actual !== expectedPredecessor) {
-      if (!cardIdSet.has(actual ?? "")) {
-        throw new SupersedesNotFoundError(
-          `Card ${normalized[i].card_id} (v${normalized[i].version}) supersedes ${actual}, which is not in the chain`,
-        );
-      }
+  const cardIdSet = new Set(entries.map((e) => e.cardId));
+  for (let i = 1; i < entries.length; i++) {
+    const target = entries[i].supersedes;
+    if (target && !cardIdSet.has(target)) {
+      throw new SupersedesNotFoundError(
+        `Card ${entries[i].cardId} (v${entries[i].version}) supersedes ${target}, which is not in the chain`,
+      );
     }
   }
 
-  return makeChain(normalized);
+  return {
+    entries,
+    current: entries[entries.length - 1],
+    original: entries[0],
+    length: entries.length,
+    isValid: true,
+  };
 }
 
-// ── Registration helpers ──────────────────────────────────────────────────────
+// ── Registration Helpers ─────────────────────────────────────────────────────
 
+/**
+ * Prepare version and supersedes fields for a registration call.
+ *
+ * prepareVersionFields()          → { version: 1, supersedes: null }
+ * prepareVersionFields(oldCard)   → { version: 2, supersedes: 'old-uuid' }
+ */
 export function prepareVersionFields(
-  supersedesCard?: Record<string, unknown> | null,
+  supersedesCard?: VersionedCard | null,
 ): { version: number; supersedes: string | null } {
-  if (!supersedesCard) return { version: 1, supersedes: null };
-
-  const oldVersion = (supersedesCard.version as number) ?? 1;
-  const oldId = (supersedesCard.id as string) ?? null;
-  return { version: oldVersion + 1, supersedes: oldId };
+  if (!supersedesCard) {
+    return { version: 1, supersedes: null };
+  }
+  return {
+    version: (supersedesCard.version ?? 1) + 1,
+    supersedes: supersedesCard.id,
+  };
 }
 
+/**
+ * Pre-registration check: verify the new card's owner matches the superseded card.
+ */
 export function validateSupersedesRegistration(
   newOwnerKey: string,
-  supersededCard: Record<string, unknown>,
+  supersededCard: VersionedCard,
 ): void {
-  const owner = (supersededCard.owner as Record<string, unknown>) ?? {};
-  const oldKey = (owner.public_key as string) ?? "";
+  const oldKey = supersededCard.owner?.public_key ?? '';
   if (newOwnerKey !== oldKey) {
     throw new OwnerMismatchError(
       `Cannot supersede card owned by ${oldKey.slice(0, 16)}... with key ${newOwnerKey.slice(0, 16)}... — owner must match`,

@@ -16,51 +16,53 @@ export const DEFAULT_REDELEGATION_DEPTH = 2;
 export class DelegationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DelegationError";
+    this.name = 'DelegationError';
   }
 }
 
 export class CapabilityEscalation extends DelegationError {
-  constructor(
-    public readonly requested: string[],
-    public readonly available: string[],
-  ) {
+  readonly requested: string[];
+  readonly available: string[];
+  constructor(requested: string[], available: string[]) {
     const escalated = requested.filter((r) => !available.includes(r));
-    super(`Capability escalation: ${JSON.stringify(escalated)} not in delegator's capabilities`);
-    this.name = "CapabilityEscalation";
+    super(`Capability escalation: [${escalated.join(', ')}] not in delegator's capabilities`);
+    this.name = 'CapabilityEscalation';
+    this.requested = requested;
+    this.available = available;
   }
 }
 
 export class DelegationExpired extends DelegationError {
-  constructor(message: string) { super(message); this.name = "DelegationExpired"; }
-}
-
-export class DelegationChainBroken extends DelegationError {
-  constructor(public readonly linkIndex: number, reason: string) {
-    super(`Chain broken at link ${linkIndex}: ${reason}`);
-    this.name = "DelegationChainBroken";
+  constructor(message: string) {
+    super(message);
+    this.name = 'DelegationExpired';
   }
 }
 
 export class RedelegationDepthExceeded extends DelegationError {
-  constructor(message: string) { super(message); this.name = "RedelegationDepthExceeded"; }
+  constructor(message: string) {
+    super(message);
+    this.name = 'RedelegationDepthExceeded';
+  }
 }
 
 export class DelegatorCardInvalid extends DelegationError {
-  constructor(message: string) { super(message); this.name = "DelegatorCardInvalid"; }
+  constructor(message: string) {
+    super(message);
+    this.name = 'DelegatorCardInvalid';
+  }
 }
 
 export class TTLExceedsDelegator extends DelegationError {
-  constructor(message: string) { super(message); this.name = "TTLExceedsDelegator"; }
+  constructor(message: string) {
+    super(message);
+    this.name = 'TTLExceedsDelegator';
+  }
 }
 
-export class SignatureInvalid extends DelegationError {
-  constructor(message: string) { super(message); this.name = "SignatureInvalid"; }
-}
+// ── Types ────────────────────────────────────────────────────────────────────
 
-// ── Delegation Token ──────────────────────────────────────────────────────────
-
-export interface DelegationTokenData {
+export interface DelegationToken {
   id: string;
   delegator_card_id: string;
   delegator_public_key: string;
@@ -74,113 +76,87 @@ export interface DelegationTokenData {
   nonce: string;
   signature: string;
 }
-
-export class DelegationToken implements DelegationTokenData {
-  id: string;
-  delegator_card_id: string;
-  delegator_public_key: string;
-  delegate_card_id: string;
-  delegated_capabilities: string[];
-  expires_at: string;
-  created_at: string;
-  parent_delegation_id: string | null;
-  max_redelegation_depth: number;
-  task_context: string | null;
-  nonce: string;
-  signature: string;
-
-  constructor(data: DelegationTokenData) {
-    Object.assign(this, data);
-    this.id = data.id;
-    this.delegator_card_id = data.delegator_card_id;
-    this.delegator_public_key = data.delegator_public_key;
-    this.delegate_card_id = data.delegate_card_id;
-    this.delegated_capabilities = [...data.delegated_capabilities].sort();
-    this.expires_at = data.expires_at;
-    this.created_at = data.created_at;
-    this.parent_delegation_id = data.parent_delegation_id;
-    this.max_redelegation_depth = data.max_redelegation_depth;
-    this.task_context = data.task_context;
-    this.nonce = data.nonce;
-    this.signature = data.signature;
-  }
-
-  get isRoot(): boolean { return this.parent_delegation_id === null; }
-  get canRedelegate(): boolean { return this.max_redelegation_depth > 0; }
-
-  toDict(): Omit<DelegationTokenData, "signature"> {
-    return {
-      id: this.id,
-      delegator_card_id: this.delegator_card_id,
-      delegator_public_key: this.delegator_public_key,
-      delegate_card_id: this.delegate_card_id,
-      delegated_capabilities: [...this.delegated_capabilities].sort(),
-      expires_at: this.expires_at,
-      created_at: this.created_at,
-      parent_delegation_id: this.parent_delegation_id,
-      max_redelegation_depth: this.max_redelegation_depth,
-      task_context: this.task_context,
-      nonce: this.nonce,
-    };
-  }
-
-  signablePayload(): string {
-    return JSON.stringify(this.toDict(), Object.keys(this.toDict()).sort());
-  }
-
-  static fromDict(data: Record<string, unknown>): DelegationToken {
-    return new DelegationToken({
-      id: (data.id as string) ?? "",
-      delegator_card_id: data.delegator_card_id as string,
-      delegator_public_key: data.delegator_public_key as string,
-      delegate_card_id: data.delegate_card_id as string,
-      delegated_capabilities: (data.delegated_capabilities as string[]) ?? [],
-      expires_at: data.expires_at as string,
-      created_at: data.created_at as string,
-      parent_delegation_id: (data.parent_delegation_id as string | null) ?? null,
-      max_redelegation_depth: (data.max_redelegation_depth as number) ?? DEFAULT_REDELEGATION_DEPTH,
-      task_context: (data.task_context as string | null) ?? null,
-      nonce: (data.nonce as string) ?? "",
-      signature: (data.signature as string) ?? "",
-    });
-  }
-}
-
-// ── Verify Result ─────────────────────────────────────────────────────────────
 
 export interface DelegationVerifyResult {
   valid: boolean;
-  reason: string | null;
-  token_id: string | null;
-  delegator_card_id: string | null;
-  delegate_card_id: string | null;
-  capabilities: string[];
-  chain_depth: number;
-  expires_at: string | null;
+  reason?: string | null;
+  tokenId?: string | null;
+  delegatorCardId?: string | null;
+  delegateCardId?: string | null;
+  capabilities?: string[];
+  chainDepth?: number;
+  expiresAt?: string | null;
 }
 
-// ── Capability Subset Validation ──────────────────────────────────────────────
+export interface CreateDelegationOptions {
+  delegatorCard: CardLike & { id?: string; owner?: { public_key: string }; expires_at?: string | null; status?: string };
+  delegateCardId: string;
+  capabilities: string[];
+  delegatorPrivateKey?: string;
+  ttlHours?: number;
+  ttlMinutes?: number;
+  expiresAt?: string;
+  parentDelegation?: DelegationToken;
+  maxRedelegationDepth?: number;
+  taskContext?: string;
+  signFn?: (payload: Uint8Array, privateKeyHex: string) => string;
+}
 
-export function validateCapabilitySubset(
-  requested: string[],
-  available: string[],
-): void {
+// ── Internals ────────────────────────────────────────────────────────────────
+
+function extractCapIds(card: any): string[] {
+  const caps: any[] = card.capabilities ?? [];
+  return caps.map((c: any) => c.id).filter(Boolean);
+}
+
+function generateNonce(): string {
+  const arr = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < 16; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateUUID(): string {
+  // Simple v4 UUID
+  const hex = generateNonce() + generateNonce();
+  return [
+    hex.slice(0, 8), hex.slice(8, 12),
+    '4' + hex.slice(13, 16),
+    ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16) + hex.slice(17, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
+function isCardExpired(card: any): boolean {
+  const exp = card.expires_at;
+  if (!exp) return false;
+  return new Date(exp).getTime() < Date.now();
+}
+
+// ── Capability Subset Validation ─────────────────────────────────────────────
+
+export function validateCapabilitySubset(requested: string[], available: string[]): void {
   for (const req of requested) {
     let covered = false;
 
     if (available.includes(req)) {
       covered = true;
     } else {
+      // Wildcard in available
       for (const avail of available) {
-        if (avail.endsWith(":*")) {
+        if (avail.endsWith(':*')) {
           const prefix = avail.slice(0, -1);
           if (req.startsWith(prefix)) { covered = true; break; }
         }
       }
-      if (!covered && req.endsWith(":*")) {
+      // Wildcard narrowing
+      if (!covered && req.endsWith(':*')) {
         const reqPrefix = req.slice(0, -1);
         for (const avail of available) {
-          if (avail.endsWith(":*")) {
+          if (avail.endsWith(':*')) {
             const availPrefix = avail.slice(0, -1);
             if (reqPrefix.startsWith(availPrefix)) { covered = true; break; }
           }
@@ -188,234 +164,353 @@ export function validateCapabilitySubset(
       }
     }
 
-    if (!covered) throw new CapabilityEscalation(requested, available);
+    if (!covered) {
+      throw new CapabilityEscalation(requested, available);
+    }
   }
 }
 
-// ── Token Creation ────────────────────────────────────────────────────────────
+// ── Signable Payload ─────────────────────────────────────────────────────────
 
-export interface CreateDelegationOptions {
-  delegatorCard: CardLike & { id?: string; status?: string; expires_at?: string | null; owner?: { public_key: string } };
-  delegateCardId: string;
-  capabilities: string[];
-  ttlHours?: number;
-  ttlMinutes?: number;
-  expiresAt?: string;
-  parentDelegation?: DelegationToken;
-  maxRedelegationDepth?: number;
-  taskContext?: string;
+export function signablePayload(token: DelegationToken): string {
+  const obj: Record<string, any> = {
+    created_at: token.created_at,
+    delegate_card_id: token.delegate_card_id,
+    delegated_capabilities: [...token.delegated_capabilities].sort(),
+    delegator_card_id: token.delegator_card_id,
+    delegator_public_key: token.delegator_public_key,
+    expires_at: token.expires_at,
+    id: token.id,
+    max_redelegation_depth: token.max_redelegation_depth,
+    nonce: token.nonce,
+    parent_delegation_id: token.parent_delegation_id,
+    task_context: token.task_context,
+  };
+  // JCS: sorted keys, no whitespace
+  return JSON.stringify(obj, Object.keys(obj).sort());
 }
+
+// ── Create Delegation ────────────────────────────────────────────────────────
 
 export function createDelegation(opts: CreateDelegationOptions): DelegationToken {
   const {
-    delegatorCard,
-    delegateCardId,
-    capabilities,
-    ttlHours,
-    ttlMinutes,
-    expiresAt,
-    parentDelegation,
-    taskContext,
+    delegatorCard, delegateCardId, capabilities,
+    delegatorPrivateKey, ttlHours, ttlMinutes, expiresAt,
+    parentDelegation, taskContext, signFn,
   } = opts;
+  let { maxRedelegationDepth } = opts;
 
   const now = new Date();
+  const delegatorId = (delegatorCard as any).id ?? '';
+  const delegatorPubKey = (delegatorCard as any).owner?.public_key ?? '';
+  const delegatorCaps = extractCapIds(delegatorCard);
+  const delegatorExpiry = (delegatorCard as any).expires_at ?? null;
 
-  const delegatorId = delegatorCard.id ?? "";
-  const delegatorPubkey = delegatorCard.owner?.public_key ?? "";
-  const delegatorCaps = extractCapabilityIds(delegatorCard as CardLike);
-  const delegatorExpiry = delegatorCard.expires_at ?? null;
-  const status = (delegatorCard as { status?: string }).status ?? "active";
-
-  if (isExpired(delegatorCard as { expires_at?: string | null })) {
+  // Check delegator validity
+  if (isCardExpired(delegatorCard)) {
     throw new DelegatorCardInvalid("Delegator's card has expired");
   }
-  if (status === "revoked" || status === "superseded") {
+  const status = (delegatorCard as any).status ?? 'active';
+  if (status === 'revoked' || status === 'superseded') {
     throw new DelegatorCardInvalid(`Delegator's card status is '${status}'`);
   }
 
+  // Re-delegation constraints
   let effectiveCaps = delegatorCaps;
-  let effectiveMaxDepth = opts.maxRedelegationDepth ?? null;
+  let effectiveExpiry = delegatorExpiry;
 
   if (parentDelegation) {
-    if (!parentDelegation.canRedelegate) {
+    if (parentDelegation.max_redelegation_depth <= 0) {
       throw new RedelegationDepthExceeded(
-        `Parent delegation has max_redelegation_depth=0 — cannot re-delegate`,
+        `Parent delegation ${parentDelegation.id} has max_redelegation_depth=0`
       );
     }
     effectiveCaps = parentDelegation.delegated_capabilities;
     const parentDepth = parentDelegation.max_redelegation_depth;
-    if (effectiveMaxDepth === null) {
-      effectiveMaxDepth = parentDepth - 1;
-    } else if (effectiveMaxDepth >= parentDepth) {
-      effectiveMaxDepth = parentDepth - 1;
+    if (maxRedelegationDepth == null) {
+      maxRedelegationDepth = parentDepth - 1;
+    } else if (maxRedelegationDepth >= parentDepth) {
+      maxRedelegationDepth = parentDepth - 1;
     }
+    effectiveExpiry = parentDelegation.expires_at;
   } else {
-    if (effectiveMaxDepth === null) effectiveMaxDepth = DEFAULT_REDELEGATION_DEPTH;
+    if (maxRedelegationDepth == null) {
+      maxRedelegationDepth = DEFAULT_REDELEGATION_DEPTH;
+    }
   }
 
-  effectiveMaxDepth = Math.min(effectiveMaxDepth!, MAX_CHAIN_DEPTH);
+  maxRedelegationDepth = Math.min(maxRedelegationDepth, MAX_CHAIN_DEPTH);
 
+  // Validate subset
   validateCapabilitySubset(capabilities, effectiveCaps);
 
+  // Resolve expiry
   let tokenExpiry: string;
   if (expiresAt) {
     tokenExpiry = expiresAt;
-  } else if (ttlHours !== undefined || ttlMinutes !== undefined) {
+  } else if (ttlHours != null || ttlMinutes != null) {
     const ms = ((ttlHours ?? 0) * 3600 + (ttlMinutes ?? 0) * 60) * 1000;
     tokenExpiry = new Date(now.getTime() + ms).toISOString();
+  } else if (effectiveExpiry) {
+    tokenExpiry = effectiveExpiry;
   } else {
-    if (delegatorExpiry) {
-      tokenExpiry = delegatorExpiry;
-    } else {
-      tokenExpiry = new Date(now.getTime() + DEFAULT_MAX_TTL_HOURS * 3600 * 1000).toISOString();
-    }
+    tokenExpiry = new Date(now.getTime() + DEFAULT_MAX_TTL_HOURS * 3600000).toISOString();
   }
 
-  const tokenExpDt = parseExpiresAt(tokenExpiry);
-  if (delegatorExpiry) {
-    const delegatorExpDt = parseExpiresAt(delegatorExpiry);
-    if (tokenExpDt && delegatorExpDt && tokenExpDt > delegatorExpDt) {
+  // TTL check
+  if (effectiveExpiry) {
+    if (new Date(tokenExpiry).getTime() > new Date(effectiveExpiry).getTime()) {
       throw new TTLExceedsDelegator(
-        `Delegation expires at ${tokenExpiry} but delegator's card expires at ${delegatorExpiry}`,
+        `Delegation expires at ${tokenExpiry} but delegator expires at ${effectiveExpiry}`
       );
     }
   }
 
-  const nonce = Array.from(
-    { length: 32 },
-    () => Math.floor(Math.random() * 16).toString(16),
-  ).join("");
-
-  return new DelegationToken({
-    id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+  const token: DelegationToken = {
+    id: generateUUID(),
     delegator_card_id: delegatorId,
-    delegator_public_key: delegatorPubkey,
+    delegator_public_key: delegatorPubKey,
     delegate_card_id: delegateCardId,
     delegated_capabilities: [...capabilities].sort(),
     expires_at: tokenExpiry,
     created_at: now.toISOString(),
     parent_delegation_id: parentDelegation?.id ?? null,
-    max_redelegation_depth: effectiveMaxDepth,
+    max_redelegation_depth: maxRedelegationDepth,
     task_context: taskContext ?? null,
-    nonce,
-    signature: "",
-  });
+    nonce: generateNonce(),
+    signature: '',
+  };
+
+  // Sign
+  if (signFn && delegatorPrivateKey) {
+    const payload = new TextEncoder().encode(signablePayload(token));
+    token.signature = signFn(payload, delegatorPrivateKey);
+  }
+
+  return token;
 }
 
-// ── Chain Verification ────────────────────────────────────────────────────────
+// ── Verify Single Token ──────────────────────────────────────────────────────
+
+export function verifyDelegation(
+  token: DelegationToken,
+  delegatorCard: any,
+  options?: {
+    verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
+    now?: Date;
+  },
+): DelegationVerifyResult {
+  const now = options?.now ?? new Date();
+
+  // Token expiry
+  if (new Date(token.expires_at).getTime() < now.getTime()) {
+    return { valid: false, reason: 'delegation_expired', tokenId: token.id, expiresAt: token.expires_at };
+  }
+
+  // Card validity
+  if (isCardExpired(delegatorCard)) {
+    return { valid: false, reason: 'delegator_card_expired', tokenId: token.id, delegatorCardId: token.delegator_card_id };
+  }
+  const status = delegatorCard.status ?? 'active';
+  if (status === 'revoked' || status === 'superseded') {
+    return { valid: false, reason: `delegator_card_${status}`, tokenId: token.id, delegatorCardId: token.delegator_card_id };
+  }
+
+  // Card ID match
+  if (delegatorCard.id && token.delegator_card_id !== delegatorCard.id) {
+    return { valid: false, reason: 'delegator_card_id_mismatch', tokenId: token.id, delegatorCardId: token.delegator_card_id };
+  }
+
+  // Capability subset
+  const cardCaps = extractCapIds(delegatorCard);
+  try {
+    validateCapabilitySubset(token.delegated_capabilities, cardCaps);
+  } catch {
+    return { valid: false, reason: 'capability_escalation', tokenId: token.id };
+  }
+
+  // Signature
+  if (options?.verifySignatureFn && token.signature) {
+    const payload = new TextEncoder().encode(signablePayload(token));
+    try {
+      if (!options.verifySignatureFn(payload, token.signature, token.delegator_public_key)) {
+        return { valid: false, reason: 'signature_invalid', tokenId: token.id };
+      }
+    } catch (e) {
+      return { valid: false, reason: `signature_error: ${e}`, tokenId: token.id };
+    }
+  }
+
+  return {
+    valid: true,
+    tokenId: token.id,
+    delegatorCardId: token.delegator_card_id,
+    delegateCardId: token.delegate_card_id,
+    capabilities: token.delegated_capabilities,
+    chainDepth: token.parent_delegation_id ? 1 : 0,
+    expiresAt: token.expires_at,
+  };
+}
+
+// ── Verify Chain ─────────────────────────────────────────────────────────────
 
 export function verifyDelegationChain(
   tokens: DelegationToken[],
-  rootCard: CardLike & { id?: string; status?: string; expires_at?: string | null },
-  opts: { now?: Date } = {},
+  rootCard: any,
+  options?: {
+    verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
+    now?: Date;
+  },
 ): DelegationVerifyResult {
-  if (!tokens.length) {
-    return { valid: false, reason: "empty_chain", token_id: null, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
+  if (tokens.length === 0) {
+    return { valid: false, reason: 'empty_chain' };
   }
 
-  const current = opts.now ?? new Date();
+  const now = options?.now ?? new Date();
 
   // Verify root
-  const root = tokens[0];
-  if (root.parent_delegation_id !== null) {
-    return { valid: false, reason: "first_token_is_not_root (has parent_delegation_id)", token_id: root.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
+  const rootResult = verifyDelegation(tokens[0], rootCard, { ...options, now });
+  if (!rootResult.valid) {
+    return { valid: false, reason: `root_link_failed: ${rootResult.reason}`, tokenId: tokens[0].id, chainDepth: 0 };
   }
 
-  if (isExpired(rootCard as { expires_at?: string | null }, { now: current })) {
-    return { valid: false, reason: "root_link_failed: delegator_card_expired", token_id: root.id, delegator_card_id: root.delegator_card_id, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
+  if (tokens[0].parent_delegation_id !== null) {
+    return { valid: false, reason: 'first_token_is_not_root (has parent_delegation_id)', tokenId: tokens[0].id };
   }
 
-  const rootStatus = (rootCard as { status?: string }).status ?? "active";
-  if (rootStatus === "revoked" || rootStatus === "superseded") {
-    return { valid: false, reason: `root_link_failed: delegator_card_${rootStatus}`, token_id: root.id, delegator_card_id: root.delegator_card_id, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
-  }
-
-  const rootCardId = rootCard.id;
-  if (rootCardId && root.delegator_card_id !== rootCardId) {
-    return { valid: false, reason: "root_link_failed: delegator_card_id_mismatch", token_id: root.id, delegator_card_id: root.delegator_card_id, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
-  }
-
-  const rootCardCaps = extractCapabilityIds(rootCard as CardLike);
-  try {
-    validateCapabilitySubset(root.delegated_capabilities, rootCardCaps);
-  } catch {
-    return { valid: false, reason: "root_link_failed: capability_escalation", token_id: root.id, delegator_card_id: root.delegator_card_id, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
-  }
-
-  const rootExp = parseExpiresAt(root.expires_at);
-  if (rootExp && current > rootExp) {
-    return { valid: false, reason: "root_link_failed: delegation_expired", token_id: root.id, delegator_card_id: root.delegator_card_id, delegate_card_id: null, capabilities: [], chain_depth: 0, expires_at: null };
-  }
-
-  let prevToken = root;
-  let prevCaps = root.delegated_capabilities;
-  let prevExpiry = parseExpiresAt(root.expires_at);
+  let prevToken = tokens[0];
+  let prevCaps = prevToken.delegated_capabilities;
+  let prevExpiry = new Date(prevToken.expires_at).getTime();
 
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
 
+    // Parent reference
     if (token.parent_delegation_id !== prevToken.id) {
-      return { valid: false, reason: `parent_delegation_id mismatch at link ${i}: expected ${prevToken.id}, got ${token.parent_delegation_id}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+      return {
+        valid: false,
+        reason: `parent_delegation_id mismatch at link ${i}: expected ${prevToken.id}, got ${token.parent_delegation_id}`,
+        tokenId: token.id, chainDepth: i,
+      };
     }
 
+    // Chain continuity
     if (prevToken.delegate_card_id !== token.delegator_card_id) {
-      return { valid: false, reason: `chain discontinuity at link ${i}: prev delegate ${prevToken.delegate_card_id} != current delegator ${token.delegator_card_id}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+      return {
+        valid: false,
+        reason: `chain discontinuity at link ${i}: prev delegate ${prevToken.delegate_card_id} != current delegator ${token.delegator_card_id}`,
+        tokenId: token.id, chainDepth: i,
+      };
     }
 
+    // Capability narrowing
     try {
       validateCapabilitySubset(token.delegated_capabilities, prevCaps);
     } catch {
-      return { valid: false, reason: `capability_escalation at link ${i}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+      return { valid: false, reason: `capability_escalation at link ${i}`, tokenId: token.id, chainDepth: i };
     }
 
-    const tokenExp = parseExpiresAt(token.expires_at);
-    if (tokenExp && prevExpiry && tokenExp > prevExpiry) {
-      return { valid: false, reason: `ttl_escalation at link ${i}: ${token.expires_at} exceeds parent ${prevToken.expires_at}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+    // TTL narrowing
+    const tokenExp = new Date(token.expires_at).getTime();
+    if (tokenExp > prevExpiry) {
+      return {
+        valid: false,
+        reason: `ttl_escalation at link ${i}: ${token.expires_at} exceeds parent ${prevToken.expires_at}`,
+        tokenId: token.id, chainDepth: i,
+      };
     }
 
+    // Depth
     if (prevToken.max_redelegation_depth <= 0) {
-      return { valid: false, reason: `redelegation_depth_exceeded at link ${i}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+      return { valid: false, reason: `redelegation_depth_exceeded at link ${i}`, tokenId: token.id, chainDepth: i };
     }
 
-    const tokenExpCheck = parseExpiresAt(token.expires_at);
-    if (tokenExpCheck && current > tokenExpCheck) {
-      return { valid: false, reason: `delegation_expired at link ${i}`, token_id: token.id, delegator_card_id: null, delegate_card_id: null, capabilities: [], chain_depth: i, expires_at: null };
+    // Expiry
+    if (tokenExp < now.getTime()) {
+      return { valid: false, reason: `delegation_expired at link ${i}`, tokenId: token.id, chainDepth: i };
+    }
+
+    // Signature
+    if (options?.verifySignatureFn && token.signature) {
+      const payload = new TextEncoder().encode(signablePayload(token));
+      try {
+        if (!options.verifySignatureFn(payload, token.signature, token.delegator_public_key)) {
+          return { valid: false, reason: `signature_invalid at link ${i}`, tokenId: token.id, chainDepth: i };
+        }
+      } catch (e) {
+        return { valid: false, reason: `signature_error at link ${i}: ${e}`, tokenId: token.id, chainDepth: i };
+      }
     }
 
     prevToken = token;
     prevCaps = token.delegated_capabilities;
-    prevExpiry = parseExpiresAt(token.expires_at);
+    prevExpiry = tokenExp;
   }
 
   const final = tokens[tokens.length - 1];
   return {
     valid: true,
-    reason: null,
-    token_id: final.id,
-    delegator_card_id: tokens[0].delegator_card_id,
-    delegate_card_id: final.delegate_card_id,
+    tokenId: final.id,
+    delegatorCardId: tokens[0].delegator_card_id,
+    delegateCardId: final.delegate_card_id,
     capabilities: final.delegated_capabilities,
-    chain_depth: tokens.length,
-    expires_at: final.expires_at,
+    chainDepth: tokens.length,
+    expiresAt: final.expires_at,
   };
 }
 
-// ── Re-delegation helper ──────────────────────────────────────────────────────
+// ── Enforce Through Delegation ───────────────────────────────────────────────
 
-export function redelegate(
-  parentToken: DelegationToken,
-  redelegatorCard: CardLike & { id?: string; status?: string; expires_at?: string | null; owner?: { public_key: string } },
-  delegateCardId: string,
-  capabilities: string[],
-  opts: { ttlHours?: number; ttlMinutes?: number; taskContext?: string } = {},
-): DelegationToken {
+export function enforceDelegated(token: DelegationToken, required: string, now?: Date): void {
+  const current = now ?? new Date();
+  if (new Date(token.expires_at).getTime() < current.getTime()) {
+    throw new DelegationExpired(`Delegation ${token.id} expired at ${token.expires_at}`);
+  }
+
+  const caps = token.delegated_capabilities;
+  let covered = false;
+
+  if (caps.includes(required)) covered = true;
+  if (!covered && required.endsWith(':*')) {
+    const prefix = required.slice(0, -1);
+    covered = caps.some((c) => c.startsWith(prefix));
+  }
+  if (!covered) {
+    for (const c of caps) {
+      if (c.endsWith(':*') && required.startsWith(c.slice(0, -1))) {
+        covered = true;
+        break;
+      }
+    }
+  }
+
+  if (!covered) {
+    throw new CapabilityEscalation([required], caps);
+  }
+}
+
+// ── Re-delegation Helper ─────────────────────────────────────────────────────
+
+export function redelegate(opts: {
+  parentToken: DelegationToken;
+  redelegatorCard: any;
+  delegateCardId: string;
+  capabilities: string[];
+  redelegatorPrivateKey?: string;
+  ttlHours?: number;
+  ttlMinutes?: number;
+  taskContext?: string;
+  signFn?: (payload: Uint8Array, privateKeyHex: string) => string;
+}): DelegationToken {
   return createDelegation({
-    delegatorCard: redelegatorCard,
-    delegateCardId,
-    capabilities,
+    delegatorCard: opts.redelegatorCard,
+    delegateCardId: opts.delegateCardId,
+    capabilities: opts.capabilities,
+    delegatorPrivateKey: opts.redelegatorPrivateKey,
     ttlHours: opts.ttlHours,
     ttlMinutes: opts.ttlMinutes,
-    parentDelegation: parentToken,
+    parentDelegation: opts.parentToken,
     taskContext: opts.taskContext,
+    signFn: opts.signFn,
   });
 }

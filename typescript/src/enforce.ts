@@ -1,79 +1,103 @@
 /**
- * Carapace v0.2 — Runtime Capability Enforcement (TypeScript mirror of enforce.py)
+ * Carapace v0.2 — Runtime Capability Enforcement (TypeScript)
+ *
+ * Middleware layer that gates API/tool calls based on declared capability scope.
+ *
+ * Usage:
+ *   import { enforce, enforceAll, hasCapability, EnforcementPolicy } from './enforce';
+ *
+ *   enforce(card, 'carapace:write:database');
+ *   enforceAll(card, ['carapace:read:email', 'carapace:write:email']);
  */
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
+export interface Capability {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/** Minimum card shape needed for enforcement — AgentCard satisfies this. */
 export interface CardLike {
   id?: string | null;
-  capabilities: Array<{ id: string } | string>;
+  capabilities: Capability[] | Array<{ id: string }>;
   expires_at?: string | null;
 }
 
-// ── Errors ────────────────────────────────────────────────────────────────────
+// ── Errors ───────────────────────────────────────────────────────────────────
 
 export class CapabilityDenied extends Error {
-  constructor(
-    public readonly required: string,
-    public readonly agentId?: string | null,
-    public readonly declared: string[] = [],
-  ) {
-    let msg = `Capability denied: '${required}' not declared`;
-    if (agentId) msg += ` by agent ${agentId}`;
+  readonly required: string;
+  readonly agentId: string | null;
+  readonly declared: string[];
+
+  constructor(required: string, agentId?: string | null, declared?: string[]) {
+    const msg = `Capability denied: '${required}' not declared${agentId ? ` by agent ${agentId}` : ''}`;
     super(msg);
-    this.name = "CapabilityDenied";
+    this.name = 'CapabilityDenied';
+    this.required = required;
+    this.agentId = agentId ?? null;
+    this.declared = declared ?? [];
   }
 }
 
 export class CardExpired extends Error {
-  constructor(
-    public readonly agentId?: string | null,
-    public readonly expiresAt?: string | null,
-  ) {
-    let msg = "Card expired";
+  readonly agentId: string | null;
+  readonly expiresAt: string | null;
+
+  constructor(agentId?: string | null, expiresAt?: string | null) {
+    let msg = 'Card expired';
     if (agentId) msg += ` for agent ${agentId}`;
     if (expiresAt) msg += ` (expired at ${expiresAt})`;
     super(msg);
-    this.name = "CardExpired";
+    this.name = 'CardExpired';
+    this.agentId = agentId ?? null;
+    this.expiresAt = expiresAt ?? null;
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Internals ────────────────────────────────────────────────────────────────
 
-export function extractCapabilityIds(card: CardLike): string[] {
-  return card.capabilities.map((c) =>
-    typeof c === "string" ? c : c.id,
-  );
+function extractCapabilityIds(card: CardLike): string[] {
+  return (card.capabilities ?? []).map((c) => c.id).filter(Boolean);
 }
 
-export function checkExpiry(card: CardLike): void {
+function checkExpiry(card: CardLike): void {
   const expiresAt = card.expires_at;
   if (!expiresAt) return;
 
-  const expDt = new Date(expiresAt);
-  if (isNaN(expDt.getTime())) return; // malformed — don't block
+  const expDate = new Date(expiresAt);
+  if (isNaN(expDate.getTime())) return; // Malformed — let verify() handle it
 
-  if (Date.now() > expDt.getTime()) {
-    throw new CardExpired(card.id ?? null, expiresAt);
+  if (Date.now() > expDate.getTime()) {
+    throw new CardExpired(card.id, expiresAt);
   }
 }
 
-// ── Core enforcement ──────────────────────────────────────────────────────────
+// ── Core Functions ───────────────────────────────────────────────────────────
 
+/**
+ * Check if a card declares a capability. Supports exact match and wildcard.
+ *
+ * hasCapability(card, 'carapace:read:email')     // exact
+ * hasCapability(card, 'carapace:read:*')          // any read
+ */
 export function hasCapability(card: CardLike, required: string): boolean {
   const declared = extractCapabilityIds(card);
 
+  // Exact match
   if (declared.includes(required)) return true;
 
   // Wildcard in required
-  if (required.endsWith(":*")) {
-    const prefix = required.slice(0, -1);
-    if (declared.some((d) => d.startsWith(prefix))) return true;
+  if (required.endsWith(':*')) {
+    const prefix = required.slice(0, -1); // 'carapace:read:'
+    return declared.some((d) => d.startsWith(prefix));
   }
 
   // Wildcard in declared
   for (const d of declared) {
-    if (d.endsWith(":*")) {
+    if (d.endsWith(':*')) {
       const prefix = d.slice(0, -1);
       if (required.startsWith(prefix)) return true;
     }
@@ -82,58 +106,78 @@ export function hasCapability(card: CardLike, required: string): boolean {
   return false;
 }
 
+/**
+ * Enforce a single capability. Throws CapabilityDenied if missing.
+ * Checks card expiry first by default.
+ */
 export function enforce(
   card: CardLike,
   required: string,
-  { checkExpiryFlag = true }: { checkExpiryFlag?: boolean } = {},
+  options?: { checkExpiry?: boolean },
 ): void {
-  if (checkExpiryFlag) checkExpiry(card);
+  if (options?.checkExpiry !== false) {
+    checkExpiry(card);
+  }
+
   if (!hasCapability(card, required)) {
     throw new CapabilityDenied(required, card.id, extractCapabilityIds(card));
   }
 }
 
+/** Enforce ALL listed capabilities. Fails on first miss. */
 export function enforceAll(
   card: CardLike,
   required: string[],
-  { checkExpiryFlag = true }: { checkExpiryFlag?: boolean } = {},
+  options?: { checkExpiry?: boolean },
 ): void {
-  if (checkExpiryFlag) checkExpiry(card);
+  if (options?.checkExpiry !== false) {
+    checkExpiry(card);
+  }
   for (const cap of required) {
-    enforce(card, cap, { checkExpiryFlag: false });
+    enforce(card, cap, { checkExpiry: false });
   }
 }
 
+/** Enforce AT LEAST ONE of the listed capabilities. */
 export function enforceAny(
   card: CardLike,
   required: string[],
-  { checkExpiryFlag = true }: { checkExpiryFlag?: boolean } = {},
+  options?: { checkExpiry?: boolean },
 ): void {
-  if (checkExpiryFlag) checkExpiry(card);
+  if (options?.checkExpiry !== false) {
+    checkExpiry(card);
+  }
   for (const cap of required) {
     if (hasCapability(card, cap)) return;
   }
   throw new CapabilityDenied(
-    `any of [${required.join(", ")}]`,
+    `any of [${required.join(', ')}]`,
     card.id,
     extractCapabilityIds(card),
   );
 }
 
-// ── Enforcement Policy ────────────────────────────────────────────────────────
+// ── Enforcement Policy ───────────────────────────────────────────────────────
+
+export interface PolicyRules {
+  [action: string]: string[];
+}
 
 export class EnforcementPolicy {
-  constructor(
-    public readonly name: string,
-    public readonly rules: Record<string, string[]>,
-  ) {}
+  readonly name: string;
+  readonly rules: PolicyRules;
+
+  constructor(name: string, rules: PolicyRules) {
+    this.name = name;
+    this.rules = rules;
+  }
 
   enforce(card: CardLike, action: string): void {
     const required = this.rules[action];
-    if (required === undefined) {
+    if (!required) {
       throw new Error(
         `Unknown action '${action}' in policy '${this.name}'. ` +
-          `Known actions: ${Object.keys(this.rules).join(", ")}`,
+          `Known actions: ${Object.keys(this.rules).join(', ')}`,
       );
     }
     enforceAll(card, required);

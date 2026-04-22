@@ -1,126 +1,146 @@
 /**
- * Carapace v0.2 — Card Expiry / TTL (TypeScript mirror of expiry.py)
+ * Carapace v0.2 — Card Expiry / TTL (TypeScript)
+ *
+ * Usage:
+ *   import { makeExpiresAt, checkExpiry, isExpired, ExpiryStatus } from './expiry';
+ *
+ *   const expires = makeExpiresAt({ ttlHours: 24 });
+ *   const status = checkExpiry(card);
  */
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import type { CardLike } from './enforce';
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export enum ExpiryStatus {
-  VALID = "valid",
-  EXPIRED = "expired",
-  EXPIRING_SOON = "expiring_soon",
-  NO_EXPIRY = "no_expiry",
+  VALID = 'valid',
+  EXPIRED = 'expired',
+  EXPIRING_SOON = 'expiring_soon',
+  NO_EXPIRY = 'no_expiry',
 }
 
 export interface ExpiryCheckResult {
   passed: boolean;
   reason: string | null;
-  expires_at: string | null | undefined;
-  status: string;
-  hours_remaining?: number | null;
+  expiresAt: string | null;
+  status: ExpiryStatus;
+  hoursRemaining?: number | null;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-export function parseExpiresAt(value: unknown): Date | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-  if (typeof value === "string") {
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
-
-export function makeExpiresAt(opts: {
+/**
+ * Create an ISO 8601 expires_at string for card registration.
+ *
+ * makeExpiresAt({ ttlHours: 24 })
+ * makeExpiresAt({ ttlDays: 90 })
+ * makeExpiresAt({ absolute: '2026-12-31T23:59:59Z' })
+ */
+export function makeExpiresAt(opts?: {
   ttlHours?: number;
   ttlDays?: number;
-  absolute?: Date | string;
+  absolute?: string | Date;
 }): string | null {
-  const { ttlHours, ttlDays, absolute } = opts;
+  if (!opts) return null;
 
-  if (absolute !== undefined) {
-    if (typeof absolute === "string") return absolute;
-    if (absolute instanceof Date) return absolute.toISOString();
-    throw new TypeError("absolute must be a Date or string");
+  if (opts.absolute !== undefined) {
+    if (opts.absolute instanceof Date) {
+      return opts.absolute.toISOString();
+    }
+    return opts.absolute;
   }
 
-  if (ttlHours !== undefined || ttlDays !== undefined) {
-    const ms =
-      ((ttlHours ?? 0) * 3600 + (ttlDays ?? 0) * 86400) * 1000;
-    if (ms <= 0) throw new Error("TTL must be positive");
-    return new Date(Date.now() + ms).toISOString();
+  const hours = opts.ttlHours ?? 0;
+  const days = opts.ttlDays ?? 0;
+  const totalMs = (hours * 3600 + days * 86400) * 1000;
+
+  if (totalMs <= 0) {
+    if (hours === 0 && days === 0) return null;
+    throw new Error('TTL must be positive');
   }
 
-  return null;
+  return new Date(Date.now() + totalMs).toISOString();
 }
 
+/** Parse an expires_at string to a Date, or null. */
+export function parseExpiresAt(value: string | Date | null | undefined): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Check a card's expiry status.
+ *
+ * @param warningThresholdMs - How far in advance to flag EXPIRING_SOON (default: 24h)
+ * @param now - Override current time (for testing)
+ */
 export function checkExpiry(
-  card: { expires_at?: string | null } | Record<string, unknown>,
-  opts: { warningThresholdMs?: number; now?: Date } = {},
+  card: CardLike | { expires_at?: string | null },
+  options?: {
+    warningThresholdMs?: number;
+    now?: Date;
+  },
 ): ExpiryStatus {
-  const raw =
-    (card as Record<string, unknown>).expires_at ??
-    (card as { expires_at?: unknown }).expires_at;
+  const raw = (card as any).expires_at ?? null;
+  const expDate = parseExpiresAt(raw);
 
-  const expiresDt = parseExpiresAt(raw);
-  if (!expiresDt) return ExpiryStatus.NO_EXPIRY;
+  if (!expDate) return ExpiryStatus.NO_EXPIRY;
 
-  const now = opts.now ?? new Date();
-  const warningMs = opts.warningThresholdMs ?? 24 * 3600 * 1000;
+  const now = options?.now ?? new Date();
+  const threshold = options?.warningThresholdMs ?? 24 * 60 * 60 * 1000; // 24h
 
-  if (now > expiresDt) return ExpiryStatus.EXPIRED;
-  if (now > new Date(expiresDt.getTime() - warningMs)) return ExpiryStatus.EXPIRING_SOON;
+  if (now.getTime() > expDate.getTime()) return ExpiryStatus.EXPIRED;
+  if (now.getTime() > expDate.getTime() - threshold) return ExpiryStatus.EXPIRING_SOON;
   return ExpiryStatus.VALID;
 }
 
+/** Quick boolean: is the card past its TTL? */
 export function isExpired(
-  card: { expires_at?: string | null },
-  opts: { now?: Date } = {},
+  card: CardLike | { expires_at?: string | null },
+  now?: Date,
 ): boolean {
-  return checkExpiry(card, opts) === ExpiryStatus.EXPIRED;
+  return checkExpiry(card, { now }) === ExpiryStatus.EXPIRED;
 }
 
+/**
+ * Time remaining in milliseconds. Null if no expiry.
+ * Negative if already expired.
+ */
 export function timeRemaining(
-  card: { expires_at?: string | null },
-  opts: { now?: Date } = {},
+  card: CardLike | { expires_at?: string | null },
+  now?: Date,
 ): number | null {
-  const expiresDt = parseExpiresAt(card.expires_at);
-  if (!expiresDt) return null;
-  const now = opts.now ?? new Date();
-  return expiresDt.getTime() - now.getTime(); // ms
+  const raw = (card as any).expires_at ?? null;
+  const expDate = parseExpiresAt(raw);
+  if (!expDate) return null;
+  return expDate.getTime() - (now ?? new Date()).getTime();
 }
 
+/**
+ * Returns a result object for integration into verify().
+ */
 export function validateExpiryForVerify(
-  card: { expires_at?: string | null },
-  opts: { now?: Date } = {},
+  card: CardLike | { expires_at?: string | null },
 ): ExpiryCheckResult {
-  const status = checkExpiry(card, opts);
-  const expiresAt = card.expires_at;
+  const status = checkExpiry(card);
+  const expiresAt = (card as any).expires_at ?? null;
 
   if (status === ExpiryStatus.EXPIRED) {
-    return {
-      passed: false,
-      reason: "card_expired",
-      expires_at: expiresAt,
-      status: "expired",
-    };
+    return { passed: false, reason: 'card_expired', expiresAt, status };
   }
 
   if (status === ExpiryStatus.EXPIRING_SOON) {
-    const remaining = timeRemaining(card, opts);
+    const remaining = timeRemaining(card);
     return {
       passed: true,
       reason: null,
-      expires_at: expiresAt,
-      status: "expiring_soon",
-      hours_remaining: remaining !== null ? remaining / 3_600_000 : null,
+      expiresAt,
+      status,
+      hoursRemaining: remaining != null ? remaining / (1000 * 3600) : null,
     };
   }
 
-  return {
-    passed: true,
-    reason: null,
-    expires_at: expiresAt,
-    status: status,
-  };
+  return { passed: true, reason: null, expiresAt, status };
 }
