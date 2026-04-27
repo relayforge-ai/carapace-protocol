@@ -81,7 +81,10 @@ class CardLike(Protocol):
 
 def _extract_capability_ids(card: Any) -> list[str]:
     """Pull capability IDs from a card, handling both dict and object forms."""
-    caps = getattr(card, "capabilities", None) or []
+    if isinstance(card, dict):
+        caps = card.get("capabilities") or []
+    else:
+        caps = getattr(card, "capabilities", None) or []
     if isinstance(caps, list):
         return [
             c["id"] if isinstance(c, dict) else getattr(c, "id", "")
