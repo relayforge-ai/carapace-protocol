@@ -42,5 +42,19 @@ from carapace.delegation import (
     enforce_delegated,
     redelegate,
 )
+from carapace.protected_paths import (
+    DEFAULT_PROTECTED_PATTERNS,
+    UNAUTHORIZED_SOURCES,
+    ApprovalSourceForbidden,
+    AuditLogEntry,
+    ProtectedPathError,
+    ProtectedWriteApproval,
+    ProtectedWriteBlocked,
+    check_protected_write,
+    clear_audit_log,
+    get_audit_log,
+    is_protected_path,
+    register_audit_sink,
+)
 
 __version__ = "0.3.0"

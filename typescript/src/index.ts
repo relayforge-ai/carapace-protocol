@@ -1,5 +1,5 @@
 /**
- * Carapace SDK v0.2 — Enforcement, Expiry, Versioning
+ * Carapace SDK v0.3 — Enforcement, Expiry, Versioning, Delegation, Protected Paths
  */
 
 export {
@@ -61,3 +61,21 @@ export {
   type DelegationVerifyResult,
   type CreateDelegationOptions,
 } from './delegation';
+
+export {
+  DEFAULT_PROTECTED_PATTERNS,
+  UNAUTHORIZED_SOURCES,
+  ApprovalSourceForbidden,
+  AuditLogEntry,
+  ProtectedPathError,
+  ProtectedWriteApproval,
+  ProtectedWriteBlocked,
+  checkProtectedWrite,
+  clearAuditLog,
+  getAuditLog,
+  isProtectedPath,
+  registerAuditSink,
+  type AuditLogEntryData,
+  type CheckProtectedWriteOptions,
+  type ProtectedWriteApprovalOpts,
+} from './protected_paths';
