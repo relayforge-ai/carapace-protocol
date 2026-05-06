@@ -25,9 +25,11 @@ from carapace.delegation import (
     DelegationError,
     DelegationExpired,
     DelegationChainBroken,
+    DelegationSigningError,
     RedelegationDepthExceeded,
     DelegatorCardInvalid,
     TTLExceedsDelegator,
+    SignatureInvalid,
     create_delegation,
     verify_delegation,
     verify_delegation_chain,
@@ -180,6 +182,7 @@ class TestCreateDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         assert token.delegator_card_id == "agent-a"
         assert token.delegate_card_id == "agent-b"
@@ -193,6 +196,7 @@ class TestCreateDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         assert len(token.nonce) == 32  # 16 bytes hex = 32 chars
 
@@ -203,6 +207,7 @@ class TestCreateDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         assert token.created_at is not None
 
@@ -214,6 +219,7 @@ class TestCreateDelegation:
                 delegate_card_id="agent-b",
                 capabilities=["carapace:write:database"],
                 ttl_hours=4,
+                allow_unsigned=True,
             )
 
     def test_expired_delegator_card_rejected(self):
@@ -224,6 +230,7 @@ class TestCreateDelegation:
                 delegate_card_id="agent-b",
                 capabilities=["carapace:read:email"],
                 ttl_hours=1,
+                allow_unsigned=True,
             )
 
     def test_revoked_delegator_card_rejected(self):
@@ -234,6 +241,7 @@ class TestCreateDelegation:
                 delegate_card_id="agent-b",
                 capabilities=["carapace:read:email"],
                 ttl_hours=1,
+                allow_unsigned=True,
             )
 
     def test_superseded_delegator_card_rejected(self):
@@ -244,6 +252,7 @@ class TestCreateDelegation:
                 delegate_card_id="agent-b",
                 capabilities=["carapace:read:email"],
                 ttl_hours=1,
+                allow_unsigned=True,
             )
 
     def test_ttl_exceeds_delegator_expiry_rejected(self):
@@ -254,6 +263,7 @@ class TestCreateDelegation:
                 delegate_card_id="agent-b",
                 capabilities=["carapace:read:email"],
                 ttl_hours=48,  # exceeds 2h card expiry
+                allow_unsigned=True,
             )
 
     def test_custom_max_redelegation_depth(self):
@@ -264,6 +274,7 @@ class TestCreateDelegation:
             capabilities=["carapace:read:email"],
             ttl_hours=1,
             max_redelegation_depth=0,
+            allow_unsigned=True,
         )
         assert token.max_redelegation_depth == 0
         assert not token.can_redelegate
@@ -276,6 +287,7 @@ class TestCreateDelegation:
             capabilities=["carapace:read:email"],
             ttl_hours=1,
             max_redelegation_depth=99,  # Over hard cap
+            allow_unsigned=True,
         )
         assert token.max_redelegation_depth == MAX_CHAIN_DEPTH
 
@@ -287,6 +299,7 @@ class TestCreateDelegation:
             capabilities=["carapace:read:email"],
             ttl_hours=1,
             task_context="Process Q2 invoices",
+            allow_unsigned=True,
         )
         assert token.task_context == "Process Q2 invoices"
 
@@ -302,6 +315,7 @@ class TestCreateDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         assert token.delegator_card_id == "agent-a"
 
@@ -311,6 +325,7 @@ class TestCreateDelegation:
             delegator_card=card,
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
+            allow_unsigned=True,
         )
         from carapace.expiry import parse_expires_at
         exp = parse_expires_at(token.expires_at)
@@ -334,6 +349,7 @@ class TestRedelegationDepth:
             capabilities=["carapace:read:email"],
             ttl_hours=4,
             max_redelegation_depth=2,
+            allow_unsigned=True,
         )
         card_b = make_card("agent-b", caps=["carapace:read:email"])
         token_bc = redelegate(
@@ -342,6 +358,7 @@ class TestRedelegationDepth:
             delegate_card_id="agent-c",
             capabilities=["carapace:read:email"],
             ttl_hours=2,
+            allow_unsigned=True,
         )
         assert token_bc.max_redelegation_depth == 1  # 2 - 1 = 1
 
@@ -360,6 +377,7 @@ class TestRedelegationDepth:
                 delegate_card_id="agent-c",
                 capabilities=["carapace:read:email"],
                 ttl_hours=1,
+                allow_unsigned=True,
             )
 
     def test_depth_cannot_exceed_parent_depth(self):
@@ -370,6 +388,7 @@ class TestRedelegationDepth:
             capabilities=["carapace:read:email"],
             ttl_hours=4,
             max_redelegation_depth=1,
+            allow_unsigned=True,
         )
         card_b = make_card("agent-b", caps=["carapace:read:email"])
         token_bc = redelegate(
@@ -378,6 +397,7 @@ class TestRedelegationDepth:
             delegate_card_id="agent-c",
             capabilities=["carapace:read:email"],
             ttl_hours=2,
+            allow_unsigned=True,
         )
         # Even if we tried depth=5, it should be capped at parent_depth - 1 = 0
         assert token_bc.max_redelegation_depth == 0
@@ -395,29 +415,30 @@ class TestVerifyDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is True
         assert result.capabilities == ["carapace:read:email"]
 
     def test_expired_token_fails(self):
         card = make_card(caps=["carapace:read:email"])
         token = make_token(expires_at=past(1))
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is False
         assert result.reason == "delegation_expired"
 
     def test_revoked_delegator_card_fails(self):
         card = make_card(caps=["carapace:read:email"], status="revoked")
         token = make_token()
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is False
         assert "revoked" in result.reason
 
     def test_superseded_delegator_card_fails(self):
         card = make_card(caps=["carapace:read:email"], status="superseded")
         token = make_token()
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is False
         assert "superseded" in result.reason
 
@@ -425,14 +446,14 @@ class TestVerifyDelegation:
         card = make_card(caps=["carapace:read:email"])
         # Token claims more capabilities than the card has
         token = make_token(caps=["carapace:admin:system"])
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is False
         assert "capability_escalation" in result.reason
 
     def test_card_id_mismatch_fails(self):
         card = make_card(agent_id="agent-x", caps=["carapace:read:email"])
         token = make_token(delegator_card_id="agent-y")
-        result = verify_delegation(token, delegator_card=card)
+        result = verify_delegation(token, delegator_card=card, strict=False)
         assert result.valid is False
         assert "mismatch" in result.reason
 
@@ -443,8 +464,9 @@ class TestVerifyDelegation:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
-        result = verify_delegation(token.to_dict() | {"signature": ""}, delegator_card=card)
+        result = verify_delegation(token.to_dict() | {"signature": ""}, delegator_card=card, strict=False)
         assert result.valid is True
 
 
@@ -460,8 +482,9 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
-        result = verify_delegation_chain([token_ab], root_card=card_a)
+        result = verify_delegation_chain([token_ab], root_card=card_a, strict=False)
         assert result.valid is True
         assert result.chain_depth == 1
         assert result.delegate_card_id == "agent-b"
@@ -473,6 +496,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email", "carapace:write:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         card_b = make_card("agent-b", caps=["carapace:read:email", "carapace:write:email"])
         token_bc = redelegate(
@@ -481,8 +505,9 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-c",
             capabilities=["carapace:read:email"],  # narrowed
             ttl_hours=2,
+            allow_unsigned=True,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is True
         assert result.chain_depth == 2
         assert result.delegate_card_id == "agent-c"
@@ -490,21 +515,21 @@ class TestVerifyDelegationChain:
 
     def test_empty_chain_fails(self):
         card_a = make_card("agent-a", caps=["carapace:read:email"])
-        result = verify_delegation_chain([], root_card=card_a)
+        result = verify_delegation_chain([], root_card=card_a, strict=False)
         assert result.valid is False
         assert result.reason == "empty_chain"
 
     def test_chain_with_expired_root_fails(self):
         card_a = make_card("agent-a", caps=["carapace:read:email"], expires_at=past(2))
         token_ab = make_token(delegator_card_id="agent-a", delegate_card_id="agent-b")
-        result = verify_delegation_chain([token_ab], root_card=card_a)
+        result = verify_delegation_chain([token_ab], root_card=card_a, strict=False)
         assert result.valid is False
         assert "root_link_failed" in result.reason
 
     def test_chain_with_revoked_root_card_fails(self):
         card_a = make_card("agent-a", caps=["carapace:read:email"], status="revoked")
         token_ab = make_token(delegator_card_id="agent-a", delegate_card_id="agent-b")
-        result = verify_delegation_chain([token_ab], root_card=card_a)
+        result = verify_delegation_chain([token_ab], root_card=card_a, strict=False)
         assert result.valid is False
         assert "root_link_failed" in result.reason
 
@@ -515,6 +540,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         # token_bc claims wrong parent_delegation_id
         token_bc = DelegationToken(
@@ -528,7 +554,7 @@ class TestVerifyDelegationChain:
             parent_delegation_id="wrong-parent-id",
             max_redelegation_depth=1,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "parent_delegation_id mismatch" in result.reason
 
@@ -539,6 +565,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         # token_bc claims MORE capabilities than parent
         token_bc = DelegationToken(
@@ -552,7 +579,7 @@ class TestVerifyDelegationChain:
             parent_delegation_id=token_ab.id,
             max_redelegation_depth=1,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "capability_escalation" in result.reason
 
@@ -563,6 +590,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=2,
+            allow_unsigned=True,
         )
         # token_bc expires AFTER token_ab
         token_bc = DelegationToken(
@@ -576,7 +604,7 @@ class TestVerifyDelegationChain:
             parent_delegation_id=token_ab.id,
             max_redelegation_depth=1,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "ttl_escalation" in result.reason
 
@@ -587,6 +615,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         # Force token_bc to be already expired
         token_bc = DelegationToken(
@@ -600,7 +629,7 @@ class TestVerifyDelegationChain:
             parent_delegation_id=token_ab.id,
             max_redelegation_depth=1,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "expired" in result.reason
 
@@ -612,6 +641,7 @@ class TestVerifyDelegationChain:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=4,
+            allow_unsigned=True,
         )
         # token_bc has delegator=agent-x, not agent-b
         token_bc = DelegationToken(
@@ -625,7 +655,7 @@ class TestVerifyDelegationChain:
             parent_delegation_id=token_ab.id,
             max_redelegation_depth=1,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "discontinuity" in result.reason
 
@@ -637,6 +667,7 @@ class TestVerifyDelegationChain:
             capabilities=["carapace:read:email"],
             ttl_hours=4,
             max_redelegation_depth=0,  # terminal
+            allow_unsigned=True,
         )
         token_bc = DelegationToken(
             id="tok-bc",
@@ -649,14 +680,14 @@ class TestVerifyDelegationChain:
             parent_delegation_id=token_ab.id,
             max_redelegation_depth=0,
         )
-        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a)
+        result = verify_delegation_chain([token_ab, token_bc], root_card=card_a, strict=False)
         assert result.valid is False
         assert "redelegation_depth_exceeded" in result.reason
 
     def test_non_root_first_token_fails(self):
         card_a = make_card("agent-a", caps=["carapace:read:email"])
         token_with_parent = make_token(parent_delegation_id="some-parent-id")
-        result = verify_delegation_chain([token_with_parent], root_card=card_a)
+        result = verify_delegation_chain([token_with_parent], root_card=card_a, strict=False)
         assert result.valid is False
         assert "not_root" in result.reason or "root" in result.reason
 
@@ -673,6 +704,7 @@ class TestEnforceDelegated:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         enforce_delegated(token, "carapace:read:email")  # Should not raise
 
@@ -683,6 +715,7 @@ class TestEnforceDelegated:
             delegate_card_id="agent-b",
             capabilities=["carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         with pytest.raises(CapabilityEscalation):
             enforce_delegated(token, "carapace:write:email")
@@ -741,5 +774,257 @@ class TestDelegationToken:
             delegate_card_id="agent-b",
             capabilities=["carapace:write:email", "carapace:read:email"],
             ttl_hours=1,
+            allow_unsigned=True,
         )
         assert token.delegated_capabilities == sorted(token.delegated_capabilities)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STRICT SIGNATURE ENFORCEMENT (REL-127 / REL-130)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _stub_sign(payload: bytes, private_key_hex: str) -> str:
+    """Deterministic stub signer that returns a fixed non-empty hex string."""
+    return "cafebabe" * 16
+
+
+def _stub_verify_valid(payload: bytes, signature: str, public_key: str) -> bool:
+    """Accepts any token that was signed with _stub_sign."""
+    return signature == "cafebabe" * 16
+
+
+def _stub_verify_reject(payload: bytes, signature: str, public_key: str) -> bool:
+    """Always rejects."""
+    return False
+
+
+class TestStrictSignatureEnforcement:
+    """Proves that the verifier fails closed when signatures are absent or missing."""
+
+    # ── create_delegation strict signing ─────────────────────────────────────
+
+    def test_create_without_key_raises_by_default(self):
+        """No credentials + no allow_unsigned must raise DelegationSigningError."""
+        card = make_card(caps=["carapace:read:email"])
+        with pytest.raises(DelegationSigningError):
+            create_delegation(
+                delegator_card=card,
+                delegate_card_id="agent-b",
+                capabilities=["carapace:read:email"],
+                ttl_hours=1,
+            )
+
+    def test_create_allow_unsigned_produces_empty_signature(self):
+        """allow_unsigned=True skips signing and leaves signature empty."""
+        card = make_card(caps=["carapace:read:email"])
+        token = create_delegation(
+            delegator_card=card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=1,
+            allow_unsigned=True,
+        )
+        assert token.signature == ""
+
+    def test_create_with_sign_fn_produces_signature(self):
+        """Providing sign_fn fills token.signature."""
+        card = make_card(caps=["carapace:read:email"])
+        token = create_delegation(
+            delegator_card=card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=1,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        assert token.signature == "cafebabe" * 16
+
+    def test_create_sign_fn_exception_raises_signing_error(self):
+        """If sign_fn raises, DelegationSigningError propagates."""
+        def bad_sign(payload: bytes, key: str) -> str:
+            raise RuntimeError("hardware fault")
+
+        card = make_card(caps=["carapace:read:email"])
+        with pytest.raises(DelegationSigningError, match="Signing failed"):
+            create_delegation(
+                delegator_card=card,
+                delegate_card_id="agent-b",
+                capabilities=["carapace:read:email"],
+                ttl_hours=1,
+                delegator_private_key="deadbeef" * 8,
+                sign_fn=bad_sign,
+            )
+
+    def test_create_sign_fn_exception_allow_unsigned_returns_token(self):
+        """If sign_fn raises but allow_unsigned=True, return unsigned token."""
+        def bad_sign(payload: bytes, key: str) -> str:
+            raise RuntimeError("hardware fault")
+
+        card = make_card(caps=["carapace:read:email"])
+        token = create_delegation(
+            delegator_card=card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=1,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=bad_sign,
+            allow_unsigned=True,
+        )
+        assert token.signature == ""
+
+    # ── verify_delegation strict mode ─────────────────────────────────────────
+
+    def test_verify_unsigned_token_fails_in_strict_mode(self):
+        """Unsigned token must fail when strict=True (default)."""
+        card = make_card(caps=["carapace:read:email"])
+        token = make_token()  # signature=""
+        result = verify_delegation(
+            token, delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        assert result.valid is False
+        assert result.reason == "unsigned_token"
+
+    def test_verify_missing_fn_fails_in_strict_mode(self):
+        """Missing verify_signature_fn must fail when strict=True (default)."""
+        card = make_card(caps=["carapace:read:email"])
+        token = make_token()
+        token.signature = "cafebabe" * 16
+        result = verify_delegation(token, delegator_card=card)
+        assert result.valid is False
+        assert result.reason == "missing_verify_signature_fn"
+
+    def test_verify_malformed_signature_fails(self):
+        """A non-empty but wrong signature is rejected."""
+        card = make_card(caps=["carapace:read:email"])
+        token = make_token()
+        token.signature = "badc0de0" * 16  # not the stub value
+        result = verify_delegation(
+            token, delegator_card=card,
+            verify_signature_fn=_stub_verify_reject,
+        )
+        assert result.valid is False
+        assert result.reason == "signature_invalid"
+
+    def test_verify_valid_signed_token_passes_strict(self):
+        """A properly signed token passes strict verification."""
+        card = make_card(caps=["carapace:read:email"])
+        token = create_delegation(
+            delegator_card=card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        result = verify_delegation(
+            token, delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        assert result.valid is True
+        assert result.capabilities == ["carapace:read:email"]
+
+    def test_verify_strict_false_allows_unsigned(self):
+        """strict=False lets unsigned tokens pass (test/dev only)."""
+        card = make_card(caps=["carapace:read:email"])
+        token = make_token()  # signature=""
+        result = verify_delegation(token, delegator_card=card, strict=False)
+        assert result.valid is True
+
+    def test_verify_strict_false_allows_missing_fn(self):
+        """strict=False skips missing-verifier check (test/dev only)."""
+        card = make_card(caps=["carapace:read:email"])
+        token = make_token()
+        token.signature = "cafebabe" * 16
+        result = verify_delegation(token, delegator_card=card, strict=False)
+        assert result.valid is True
+
+    # ── verify_delegation_chain strict mode ───────────────────────────────────
+
+    def test_chain_unsigned_root_fails_strict(self):
+        """Root token with no signature fails strict chain verification."""
+        card_a = make_card("agent-a", caps=["carapace:read:email"])
+        token_ab = create_delegation(
+            delegator_card=card_a,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            allow_unsigned=True,
+        )
+        result = verify_delegation_chain(
+            [token_ab], root_card=card_a,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        assert result.valid is False
+        assert "unsigned_token" in result.reason
+
+    def test_chain_missing_fn_fails_strict(self):
+        """Missing verify_signature_fn fails strict chain verification."""
+        card_a = make_card("agent-a", caps=["carapace:read:email"])
+        token_ab = create_delegation(
+            delegator_card=card_a,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        result = verify_delegation_chain([token_ab], root_card=card_a)
+        assert result.valid is False
+        assert "missing_verify_signature_fn" in result.reason
+
+    def test_chain_unsigned_link_fails_strict(self):
+        """An unsigned intermediate link fails strict chain verification."""
+        card_a = make_card("agent-a", caps=["carapace:read:email"])
+        token_ab = create_delegation(
+            delegator_card=card_a,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        card_b = make_card("agent-b", caps=["carapace:read:email"])
+        token_bc = redelegate(
+            parent_token=token_ab,
+            redelegator_card=card_b,
+            delegate_card_id="agent-c",
+            capabilities=["carapace:read:email"],
+            ttl_hours=2,
+            allow_unsigned=True,  # unsigned intermediate
+        )
+        result = verify_delegation_chain(
+            [token_ab, token_bc], root_card=card_a,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        assert result.valid is False
+        assert "unsigned_token" in result.reason
+
+    def test_chain_fully_signed_passes_strict(self):
+        """A fully signed chain passes strict verification end-to-end."""
+        card_a = make_card("agent-a", caps=["carapace:read:email"])
+        token_ab = create_delegation(
+            delegator_card=card_a,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        card_b = make_card("agent-b", caps=["carapace:read:email"])
+        token_bc = redelegate(
+            parent_token=token_ab,
+            redelegator_card=card_b,
+            delegate_card_id="agent-c",
+            capabilities=["carapace:read:email"],
+            ttl_hours=2,
+            redelegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        result = verify_delegation_chain(
+            [token_ab, token_bc], root_card=card_a,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        assert result.valid is True
+        assert result.chain_depth == 2
+

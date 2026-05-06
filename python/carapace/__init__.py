@@ -24,5 +24,23 @@ from carapace.versioning import (
     prepare_version_fields,
     validate_supersedes_registration,
 )
+from carapace.delegation import (
+    DelegationToken,
+    DelegationVerifyResult,
+    DelegationError,
+    DelegationSigningError,
+    SignatureInvalid,
+    CapabilityEscalation,
+    DelegationExpired,
+    DelegationChainBroken,
+    RedelegationDepthExceeded,
+    DelegatorCardInvalid,
+    TTLExceedsDelegator,
+    create_delegation,
+    verify_delegation,
+    verify_delegation_chain,
+    enforce_delegated,
+    redelegate,
+)
 
 __version__ = "0.3.0"

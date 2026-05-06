@@ -38,3 +38,26 @@ export {
   type VersionEntry,
   type VersionChain,
 } from './versioning';
+
+export {
+  DelegationError,
+  DelegationSigningError,
+  CapabilityEscalation,
+  DelegationExpired,
+  RedelegationDepthExceeded,
+  DelegatorCardInvalid,
+  TTLExceedsDelegator,
+  createDelegation,
+  verifyDelegation,
+  verifyDelegationChain,
+  signablePayload,
+  validateCapabilitySubset,
+  enforceDelegated,
+  redelegate,
+  MAX_CHAIN_DEPTH,
+  DEFAULT_MAX_TTL_HOURS,
+  DEFAULT_REDELEGATION_DEPTH,
+  type DelegationToken,
+  type DelegationVerifyResult,
+  type CreateDelegationOptions,
+} from './delegation';
