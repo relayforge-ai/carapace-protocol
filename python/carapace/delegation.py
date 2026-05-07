@@ -101,6 +101,11 @@ class SignatureInvalid(DelegationError):
     pass
 
 
+class DelegationSigningError(DelegationError):
+    """Signing failed or was skipped without explicit allow_unsigned=True."""
+    pass
+
+
 # ── Delegation Token ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -253,6 +258,7 @@ def create_delegation(
     max_redelegation_depth: int | None = None,
     task_context: str | None = None,
     sign_fn: Any | None = None,
+    allow_unsigned: bool = False,
 ) -> DelegationToken:
     """
     Create a delegation token from a delegator's card to a delegate.
@@ -269,10 +275,16 @@ def create_delegation(
         max_redelegation_depth: How many more re-delegations allowed.
         task_context: Optional task description for audit trail.
         sign_fn: Optional custom signing function(payload_bytes, private_key_hex) -> signature_hex.
-                 If None, signing is deferred (signature will be empty).
+        allow_unsigned: If True, return an unsigned token when signing is unavailable.
+                        **For testing/development only.** Production callers must provide
+                        signing credentials; omitting them raises DelegationSigningError.
 
     Returns:
         DelegationToken (signed if sign_fn or delegator_private_key provided).
+
+    Raises:
+        DelegationSigningError: If signing fails or no signing credentials are provided
+            and allow_unsigned is False (the default).
     """
     now = datetime.now(timezone.utc)
 
@@ -382,9 +394,26 @@ def create_delegation(
     )
 
     # ── Sign ──────────────────────────────────────────────────────────────
+    signed = False
     if sign_fn is not None and delegator_private_key:
-        payload = token.signable_payload().encode("utf-8")
-        token.signature = sign_fn(payload, delegator_private_key)
+        try:
+            payload = token.signable_payload().encode("utf-8")
+            signature = sign_fn(payload, delegator_private_key)
+        except Exception as e:
+            if not allow_unsigned:
+                raise DelegationSigningError(
+                    f"Signing failed: {e}. Pass allow_unsigned=True (test/dev only) "
+                    "to suppress this error."
+                ) from e
+        else:
+            if signature:
+                token.signature = signature
+                signed = True
+            elif not allow_unsigned:
+                raise DelegationSigningError(
+                    "Signing returned an empty signature. Pass allow_unsigned=True "
+                    "(test/dev only) to create an unsigned delegation token."
+                )
     elif delegator_private_key:
         # If no sign_fn, try to use Ed25519 directly
         try:
@@ -400,10 +429,26 @@ def create_delegation(
             payload = token.signable_payload().encode("utf-8")
             sig = private_key.sign(payload)
             token.signature = sig.hex()
+            signed = True
         except ImportError:
-            pass  # No cryptography library — signature deferred
-        except Exception:
-            pass  # Key format issue — signature deferred
+            if not allow_unsigned:
+                raise DelegationSigningError(
+                    "The 'cryptography' library is required for Ed25519 signing. "
+                    "Install it or pass allow_unsigned=True (test/dev only)."
+                )
+        except Exception as e:
+            if not allow_unsigned:
+                raise DelegationSigningError(
+                    f"Signing failed: {e}. Pass allow_unsigned=True (test/dev only) "
+                    "to suppress this error."
+                )
+
+    if not signed and not allow_unsigned:
+        raise DelegationSigningError(
+            "No signing credentials provided. Supply delegator_private_key (and "
+            "optionally sign_fn), or pass allow_unsigned=True (test/dev only) to "
+            "create an unsigned delegation token."
+        )
 
     return token
 
@@ -416,6 +461,7 @@ def verify_delegation(
     *,
     verify_signature_fn: Any | None = None,
     now: datetime | None = None,
+    strict: bool = True,
 ) -> DelegationVerifyResult:
     """
     Verify a single delegation token against the delegator's card.
@@ -424,14 +470,18 @@ def verify_delegation(
     1. Token hasn't expired
     2. Delegator card is valid (not expired, not revoked)
     3. Delegated capabilities are a subset of delegator's capabilities
-    4. Signature is valid (if verify_signature_fn provided)
+    4. Signature is present and valid (strict mode, the default)
     5. Token's delegator_card_id matches the card
 
     Args:
         token: The delegation token to verify.
         delegator_card: The delegator's AgentCard.
-        verify_signature_fn: Optional fn(payload_bytes, signature_hex, public_key_hex) -> bool.
+        verify_signature_fn: fn(payload_bytes, signature_hex, public_key_hex) -> bool.
+            Required in strict mode (the default).
         now: Override current time for testing.
+        strict: When True (default), tokens without a signature are rejected and
+            verify_signature_fn must be provided. Set to False only in test/dev
+            environments where signatures are intentionally absent.
 
     Returns:
         DelegationVerifyResult
@@ -501,6 +551,20 @@ def verify_delegation(
         )
 
     # ── Check signature ───────────────────────────────────────────────────
+    if strict:
+        if not token.signature:
+            return DelegationVerifyResult(
+                valid=False,
+                reason="unsigned_token",
+                token_id=token.id,
+            )
+        if verify_signature_fn is None:
+            return DelegationVerifyResult(
+                valid=False,
+                reason="missing_verify_signature_fn",
+                token_id=token.id,
+            )
+
     if verify_signature_fn and token.signature:
         payload = token.signable_payload().encode("utf-8")
         try:
@@ -540,6 +604,7 @@ def verify_delegation_chain(
     *,
     verify_signature_fn: Any | None = None,
     now: datetime | None = None,
+    strict: bool = True,
 ) -> DelegationVerifyResult:
     """
     Verify a full delegation chain from root delegator to final delegate.
@@ -555,6 +620,16 @@ def verify_delegation_chain(
     5. Redelegation depth is respected
 
     Returns a result describing the final delegate's effective authority.
+
+    Args:
+        tokens: Ordered chain of delegation tokens.
+        root_card: The original delegator's AgentCard.
+        verify_signature_fn: fn(payload_bytes, signature_hex, public_key_hex) -> bool.
+            Required in strict mode (the default).
+        now: Override current time for testing.
+        strict: When True (default), tokens without a signature are rejected and
+            verify_signature_fn must be provided. Set to False only in test/dev
+            environments where signatures are intentionally absent.
     """
     if not tokens:
         return DelegationVerifyResult(valid=False, reason="empty_chain")
@@ -573,6 +648,7 @@ def verify_delegation_chain(
         normalized[0], root_card,
         verify_signature_fn=verify_signature_fn,
         now=current,
+        strict=strict,
     )
     if not root_result.valid:
         return DelegationVerifyResult(
@@ -666,6 +742,22 @@ def verify_delegation_chain(
                 chain_depth=i,
             )
 
+        if strict:
+            if not token.signature:
+                return DelegationVerifyResult(
+                    valid=False,
+                    reason=f"unsigned_token at link {i}",
+                    token_id=token.id,
+                    chain_depth=i,
+                )
+            if verify_signature_fn is None:
+                return DelegationVerifyResult(
+                    valid=False,
+                    reason=f"missing_verify_signature_fn at link {i}",
+                    token_id=token.id,
+                    chain_depth=i,
+                )
+
         if verify_signature_fn and token.signature:
             payload = token.signable_payload().encode("utf-8")
             try:
@@ -686,7 +778,6 @@ def verify_delegation_chain(
                     token_id=token.id,
                     chain_depth=i,
                 )
-
         prev_token = token
         prev_caps = token.delegated_capabilities
         prev_expiry = parse_expires_at(token.expires_at)
@@ -769,6 +860,7 @@ def redelegate(
     ttl_minutes: float | None = None,
     task_context: str | None = None,
     sign_fn: Any | None = None,
+    allow_unsigned: bool = False,
 ) -> DelegationToken:
     """
     Re-delegate a subset of an existing delegation's capabilities.
@@ -782,6 +874,9 @@ def redelegate(
     - Decrements max_redelegation_depth
     - Constrains TTL to not exceed parent's
     - Validates capability subset against parent (not against card)
+
+    Args:
+        allow_unsigned: Passed through to create_delegation. For test/dev only.
     """
     return create_delegation(
         delegator_card=redelegator_card,
@@ -793,4 +888,5 @@ def redelegate(
         parent_delegation=parent_token,
         task_context=task_context,
         sign_fn=sign_fn,
+        allow_unsigned=allow_unsigned,
     )

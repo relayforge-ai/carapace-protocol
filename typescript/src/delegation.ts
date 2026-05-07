@@ -20,6 +20,13 @@ export class DelegationError extends Error {
   }
 }
 
+export class DelegationSigningError extends DelegationError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DelegationSigningError';
+  }
+}
+
 export class CapabilityEscalation extends DelegationError {
   readonly requested: string[];
   readonly available: string[];
@@ -100,6 +107,12 @@ export interface CreateDelegationOptions {
   maxRedelegationDepth?: number;
   taskContext?: string;
   signFn?: (payload: Uint8Array, privateKeyHex: string) => string;
+  /**
+   * When true, return an unsigned token if signing is unavailable.
+   * **For testing/development only.** Production callers must provide signing
+   * credentials; omitting them throws DelegationSigningError by default.
+   */
+  allowUnsigned?: boolean;
 }
 
 // ── Internals ────────────────────────────────────────────────────────────────
@@ -197,6 +210,7 @@ export function createDelegation(opts: CreateDelegationOptions): DelegationToken
     delegatorCard, delegateCardId, capabilities,
     delegatorPrivateKey, ttlHours, ttlMinutes, expiresAt,
     parentDelegation, taskContext, signFn,
+    allowUnsigned = false,
   } = opts;
   let { maxRedelegationDepth } = opts;
 
@@ -282,9 +296,35 @@ export function createDelegation(opts: CreateDelegationOptions): DelegationToken
   };
 
   // Sign
+  let signed = false;
   if (signFn && delegatorPrivateKey) {
-    const payload = new TextEncoder().encode(signablePayload(token));
-    token.signature = signFn(payload, delegatorPrivateKey);
+    let signature: string | undefined;
+    try {
+      const payload = new TextEncoder().encode(signablePayload(token));
+      signature = signFn(payload, delegatorPrivateKey);
+    } catch (e) {
+      if (!allowUnsigned) {
+        throw new DelegationSigningError(
+          `Signing failed: ${e}. Pass allowUnsigned: true (test/dev only) to suppress this error.`
+        );
+      }
+    }
+    if (signature) {
+      token.signature = signature;
+      signed = true;
+    } else if (!allowUnsigned) {
+      throw new DelegationSigningError(
+        'Signing returned an empty signature. Pass allowUnsigned: true (test/dev only) ' +
+        'to create an unsigned delegation token.'
+      );
+    }
+  }
+
+  if (!signed && !allowUnsigned) {
+    throw new DelegationSigningError(
+      'No signing credentials provided. Supply delegatorPrivateKey and signFn, or pass ' +
+      'allowUnsigned: true (test/dev only) to create an unsigned delegation token.'
+    );
   }
 
   return token;
@@ -298,9 +338,16 @@ export function verifyDelegation(
   options?: {
     verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
     now?: Date;
+    /**
+     * When true (default), tokens without a signature are rejected and
+     * verifySignatureFn must be provided. Set to false only in test/dev
+     * environments where signatures are intentionally absent.
+     */
+    strict?: boolean;
   },
 ): DelegationVerifyResult {
   const now = options?.now ?? new Date();
+  const strict = options?.strict ?? true;
 
   // Token expiry
   if (new Date(token.expires_at).getTime() < now.getTime()) {
@@ -330,6 +377,15 @@ export function verifyDelegation(
   }
 
   // Signature
+  if (strict) {
+    if (!token.signature) {
+      return { valid: false, reason: 'unsigned_token', tokenId: token.id };
+    }
+    if (!options?.verifySignatureFn) {
+      return { valid: false, reason: 'missing_verify_signature_fn', tokenId: token.id };
+    }
+  }
+
   if (options?.verifySignatureFn && token.signature) {
     const payload = new TextEncoder().encode(signablePayload(token));
     try {
@@ -360,6 +416,12 @@ export function verifyDelegationChain(
   options?: {
     verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
     now?: Date;
+    /**
+     * When true (default), tokens without a signature are rejected and
+     * verifySignatureFn must be provided. Set to false only in test/dev
+     * environments where signatures are intentionally absent.
+     */
+    strict?: boolean;
   },
 ): DelegationVerifyResult {
   if (tokens.length === 0) {
@@ -367,6 +429,7 @@ export function verifyDelegationChain(
   }
 
   const now = options?.now ?? new Date();
+  const strict = options?.strict ?? true;
 
   // Verify root
   const rootResult = verifyDelegation(tokens[0], rootCard, { ...options, now });
@@ -430,7 +493,16 @@ export function verifyDelegationChain(
       return { valid: false, reason: `delegation_expired at link ${i}`, tokenId: token.id, chainDepth: i };
     }
 
-    // Signature
+    // Signature (strict mode)
+    if (strict) {
+      if (!token.signature) {
+        return { valid: false, reason: `unsigned_token at link ${i}`, tokenId: token.id, chainDepth: i };
+      }
+      if (!options?.verifySignatureFn) {
+        return { valid: false, reason: `missing_verify_signature_fn at link ${i}`, tokenId: token.id, chainDepth: i };
+      }
+    }
+
     if (options?.verifySignatureFn && token.signature) {
       const payload = new TextEncoder().encode(signablePayload(token));
       try {
@@ -501,6 +573,8 @@ export function redelegate(opts: {
   ttlMinutes?: number;
   taskContext?: string;
   signFn?: (payload: Uint8Array, privateKeyHex: string) => string;
+  /** Passed through to createDelegation. For test/dev only. */
+  allowUnsigned?: boolean;
 }): DelegationToken {
   return createDelegation({
     delegatorCard: opts.redelegatorCard,
@@ -512,5 +586,6 @@ export function redelegate(opts: {
     parentDelegation: opts.parentToken,
     taskContext: opts.taskContext,
     signFn: opts.signFn,
+    allowUnsigned: opts.allowUnsigned,
   });
 }

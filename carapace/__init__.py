@@ -36,6 +36,7 @@ from .delegation import (
     DelegationChainBroken,
     DelegationError,
     DelegationExpired,
+    DelegationSigningError,
     DelegationToken,
     DelegationVerifyResult,
     DelegatorCardInvalid,
@@ -49,6 +50,21 @@ from .delegation import (
     validate_capability_subset,
     verify_delegation,
     verify_delegation_chain,
+)
+
+from .protected_paths import (
+    DEFAULT_PROTECTED_PATTERNS,
+    UNAUTHORIZED_SOURCES,
+    ApprovalSourceForbidden,
+    AuditLogEntry,
+    ProtectedPathError,
+    ProtectedWriteApproval,
+    ProtectedWriteBlocked,
+    check_protected_write,
+    clear_audit_log,
+    get_audit_log,
+    is_protected_path,
+    register_audit_sink,
 )
 
 __version__ = "0.3.0"
@@ -87,6 +103,7 @@ __all__ = [
     "DelegationChainBroken",
     "DelegationError",
     "DelegationExpired",
+    "DelegationSigningError",
     "DelegationToken",
     "DelegationVerifyResult",
     "DelegatorCardInvalid",
@@ -100,4 +117,17 @@ __all__ = [
     "validate_capability_subset",
     "verify_delegation",
     "verify_delegation_chain",
+    # protected paths
+    "DEFAULT_PROTECTED_PATTERNS",
+    "UNAUTHORIZED_SOURCES",
+    "ApprovalSourceForbidden",
+    "AuditLogEntry",
+    "ProtectedPathError",
+    "ProtectedWriteApproval",
+    "ProtectedWriteBlocked",
+    "check_protected_write",
+    "clear_audit_log",
+    "get_audit_log",
+    "is_protected_path",
+    "register_audit_sink",
 ]

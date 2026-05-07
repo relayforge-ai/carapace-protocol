@@ -59,7 +59,7 @@ export class CardExpired extends Error {
 
 // ── Internals ────────────────────────────────────────────────────────────────
 
-function extractCapabilityIds(card: CardLike): string[] {
+export function extractCapabilityIds(card: CardLike): string[] {
   return (card.capabilities ?? []).map((c) => c.id).filter(Boolean);
 }
 
