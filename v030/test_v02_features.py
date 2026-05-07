@@ -7,6 +7,10 @@ Tests for Carapace v0.2 features:
 Run: pytest tests/test_v02_features.py -v
 """
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
@@ -74,10 +78,38 @@ from carapace.enforce import (
 )
 
 
+def load_v030_module(module_name: str):
+    path = Path(__file__).with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(f"v030_{module_name}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class TestHasCapability:
     def test_exact_match(self):
         card = make_card(["carapace:read:email"])
         assert has_capability(card, "carapace:read:email") is True
+
+    def test_dict_card_object_capabilities(self):
+        card = {
+            "id": "dict-card",
+            "capabilities": [{"id": "carapace:read:email"}],
+        }
+        assert has_capability(card, "carapace:read:email") is True
+
+    def test_dict_card_capability_map(self):
+        card = {
+            "id": "dict-card",
+            "capabilities": {
+                "carapace:read:email": True,
+                "carapace:write:email": False,
+            },
+        }
+        assert has_capability(card, "carapace:read:email") is True
+        assert has_capability(card, "carapace:write:email") is False
 
     def test_no_match(self):
         card = make_card(["carapace:read:email"])
@@ -109,6 +141,39 @@ class TestHasCapability:
         card = make_card(["research", "summarize"])
         assert has_capability(card, "research") is True
         assert has_capability(card, "carapace:read:research") is False
+
+
+def test_v030_bundle_dict_capability_map():
+    v030_enforce = load_v030_module("enforce")
+
+    card = {
+        "id": "v030-dict-card",
+        "capabilities": {"carapace:read:email": True},
+    }
+
+    assert v030_enforce.has_capability(card, "carapace:read:email") is True
+
+
+def test_v030_bundle_delegation_dict_capability_map():
+    v030_delegation = load_v030_module("delegation")
+
+    card = {
+        "id": "v030-agent-a",
+        "capabilities": {"carapace:read:email": True},
+        "owner": {"public_key": "aabbccdd" * 8},
+        "status": "active",
+    }
+
+    token = v030_delegation.create_delegation(
+        delegator_card=card,
+        delegate_card_id="agent-b",
+        capabilities=["carapace:read:email"],
+        ttl_hours=1,
+    )
+    result = v030_delegation.verify_delegation(token, delegator_card=card)
+
+    assert token.delegated_capabilities == ["carapace:read:email"]
+    assert result.valid is True
 
 
 class TestEnforce:

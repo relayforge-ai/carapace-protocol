@@ -283,7 +283,7 @@ def create_delegation(
     )
     if isinstance(delegator_card, dict):
         delegator_pubkey = delegator_card.get("owner", {}).get("public_key", "")
-        delegator_caps = [c["id"] for c in delegator_card.get("capabilities", [])]
+        delegator_caps = _extract_capability_ids(delegator_card)
         delegator_expiry = delegator_card.get("expires_at")
     else:
         owner = getattr(delegator_card, "owner", None)
@@ -486,10 +486,7 @@ def verify_delegation(
         )
 
     # ── Check capability subset ───────────────────────────────────────────
-    if isinstance(delegator_card, dict):
-        delegator_caps = [c["id"] for c in delegator_card.get("capabilities", [])]
-    else:
-        delegator_caps = _extract_capability_ids(delegator_card)
+    delegator_caps = _extract_capability_ids(delegator_card)
 
     try:
         validate_capability_subset(token.delegated_capabilities, delegator_caps)

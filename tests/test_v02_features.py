@@ -81,6 +81,24 @@ class TestHasCapability:
         card = make_card(["carapace:read:email"])
         assert has_capability(card, "carapace:read:email") is True
 
+    def test_dict_card_object_capabilities(self):
+        card = {
+            "id": "dict-card",
+            "capabilities": [{"id": "carapace:read:email"}],
+        }
+        assert has_capability(card, "carapace:read:email") is True
+
+    def test_dict_card_capability_map(self):
+        card = {
+            "id": "dict-card",
+            "capabilities": {
+                "carapace:read:email": True,
+                "carapace:write:email": False,
+            },
+        }
+        assert has_capability(card, "carapace:read:email") is True
+        assert has_capability(card, "carapace:write:email") is False
+
     def test_no_match(self):
         card = make_card(["carapace:read:email"])
         assert has_capability(card, "carapace:write:email") is False

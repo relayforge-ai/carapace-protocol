@@ -27,8 +27,10 @@ from carapace.versioning import (
 from carapace.delegation import (
     DelegationToken,
     DelegationVerifyResult,
+    InMemoryNonceRegistry,
     DelegationError,
     DelegationSigningError,
+    ReplayDetected,
     SignatureInvalid,
     CapabilityEscalation,
     DelegationExpired,

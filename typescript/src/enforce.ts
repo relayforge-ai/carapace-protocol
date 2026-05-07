@@ -18,10 +18,13 @@ export interface Capability {
   description: string;
 }
 
+export type CapabilityInput = Capability | { id?: string } | string;
+export type CapabilityCollection = CapabilityInput[] | Record<string, unknown>;
+
 /** Minimum card shape needed for enforcement — AgentCard satisfies this. */
 export interface CardLike {
   id?: string | null;
-  capabilities: Capability[] | Array<{ id: string }>;
+  capabilities?: CapabilityCollection;
   expires_at?: string | null;
 }
 
@@ -60,7 +63,24 @@ export class CardExpired extends Error {
 // ── Internals ────────────────────────────────────────────────────────────────
 
 export function extractCapabilityIds(card: CardLike): string[] {
-  return (card.capabilities ?? []).map((c) => c.id).filter(Boolean);
+  const caps = card.capabilities ?? [];
+
+  if (!Array.isArray(caps) && typeof caps === 'object') {
+    return Object.entries(caps)
+      .filter(([capId, enabled]) => capId && enabled !== false && enabled != null)
+      .map(([capId]) => capId);
+  }
+
+  if (Array.isArray(caps)) {
+    return caps
+      .map((cap) => {
+        if (typeof cap === 'string') return cap;
+        return cap.id ?? '';
+      })
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 function checkExpiry(card: CardLike): void {

@@ -26,6 +26,7 @@ from carapace.delegation import (
     DelegationExpired,
     DelegationChainBroken,
     DelegationSigningError,
+    InMemoryNonceRegistry,
     RedelegationDepthExceeded,
     DelegatorCardInvalid,
     TTLExceedsDelegator,
@@ -318,6 +319,34 @@ class TestCreateDelegation:
             allow_unsigned=True,
         )
         assert token.delegator_card_id == "agent-a"
+
+    def test_dict_card_capability_map_matches_object_form(self):
+        object_card = make_card(caps=["carapace:read:email"])
+        dict_card = {
+            "id": object_card.id,
+            "capabilities": {"carapace:read:email": True},
+            "owner": {"public_key": object_card.owner.public_key},
+            "status": object_card.status,
+        }
+
+        object_token = create_delegation(
+            delegator_card=object_card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=1,
+            allow_unsigned=True,
+        )
+        dict_token = create_delegation(
+            delegator_card=dict_card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=1,
+            allow_unsigned=True,
+        )
+        result = verify_delegation(dict_token, delegator_card=dict_card, strict=False)
+
+        assert dict_token.delegated_capabilities == object_token.delegated_capabilities
+        assert result.valid is True
 
     def test_default_ttl_used_when_no_card_expiry(self):
         card = make_card(caps=["carapace:read:email"])
@@ -798,6 +827,142 @@ def _stub_verify_reject(payload: bytes, signature: str, public_key: str) -> bool
     return False
 
 
+class TestReplayProtection:
+    """Proves nonce replay checks are enforceable when a checker is supplied."""
+
+    def _signed_token(self, card: MockCard | None = None) -> tuple[MockCard, DelegationToken]:
+        card = card or make_card(caps=["carapace:read:email"])
+        token = create_delegation(
+            delegator_card=card,
+            delegate_card_id="agent-b",
+            capabilities=["carapace:read:email"],
+            ttl_hours=4,
+            delegator_private_key="deadbeef" * 8,
+            sign_fn=_stub_sign,
+        )
+        return card, token
+
+    def test_first_use_passes_second_use_rejected(self):
+        card, token = self._signed_token()
+        registry = InMemoryNonceRegistry()
+
+        first = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=registry,
+        )
+        second = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=registry,
+        )
+
+        assert first.valid is True
+        assert first.replay_checked is True
+        assert second.valid is False
+        assert second.reason == "replay_detected"
+
+    def test_expired_token_rejected_before_replay_check(self):
+        card, token = self._signed_token()
+        token.expires_at = past(1)
+        registry = InMemoryNonceRegistry()
+
+        result = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=registry,
+        )
+
+        assert result.valid is False
+        assert result.reason == "delegation_expired"
+        assert result.replay_checked is False
+
+    def test_missing_nonce_rejected_when_replay_checker_supplied(self):
+        card, token = self._signed_token()
+        token.nonce = ""
+
+        result = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=InMemoryNonceRegistry(),
+        )
+
+        assert result.valid is False
+        assert result.reason == "missing_nonce"
+
+    def test_malformed_nonce_rejected_when_replay_checker_supplied(self):
+        card, token = self._signed_token()
+        token.nonce = "not-a-valid-nonce"
+
+        result = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=InMemoryNonceRegistry(),
+        )
+
+        assert result.valid is False
+        assert result.reason == "malformed_nonce"
+
+    def test_missing_replay_checker_is_explicit_when_required(self):
+        card, token = self._signed_token()
+
+        result = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            require_replay_check=True,
+        )
+
+        assert result.valid is False
+        assert result.reason == "missing_replay_checker"
+
+    def test_no_replay_checker_is_explicit_fail_open(self):
+        card, token = self._signed_token()
+
+        first = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+        )
+        second = verify_delegation(
+            token,
+            delegator_card=card,
+            verify_signature_fn=_stub_verify_valid,
+        )
+
+        assert first.valid is True
+        assert second.valid is True
+        assert first.replay_checked is False
+        assert second.replay_checked is False
+
+    def test_chain_replay_checker_rejects_second_chain_use(self):
+        card, token = self._signed_token()
+        registry = InMemoryNonceRegistry()
+
+        first = verify_delegation_chain(
+            [token],
+            root_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=registry,
+        )
+        second = verify_delegation_chain(
+            [token],
+            root_card=card,
+            verify_signature_fn=_stub_verify_valid,
+            replay_checker=registry,
+        )
+
+        assert first.valid is True
+        assert first.replay_checked is True
+        assert second.valid is False
+        assert second.reason == "replay_detected at link 0"
+
+
 class TestStrictSignatureEnforcement:
     """Proves that the verifier fails closed when signatures are absent or missing."""
 
@@ -1027,4 +1192,3 @@ class TestStrictSignatureEnforcement:
         )
         assert result.valid is True
         assert result.chain_depth == 2
-
