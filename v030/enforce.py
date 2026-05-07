@@ -80,16 +80,32 @@ class CardLike(Protocol):
 # ── Core Enforcement ──────────────────────────────────────────────────────────
 
 def _extract_capability_ids(card: Any) -> list[str]:
-    """Pull capability IDs from a card, handling both dict and object forms."""
+    """Pull capability IDs from a card, handling dict and object forms."""
     if isinstance(card, dict):
         caps = card.get("capabilities") or []
     else:
         caps = getattr(card, "capabilities", None) or []
-    if isinstance(caps, list):
+
+    if isinstance(caps, dict):
         return [
-            c["id"] if isinstance(c, dict) else getattr(c, "id", "")
-            for c in caps
+            str(cap_id)
+            for cap_id, enabled in caps.items()
+            if cap_id and enabled is not False and enabled is not None
         ]
+
+    if isinstance(caps, list):
+        ids: list[str] = []
+        for cap in caps:
+            if isinstance(cap, str):
+                cap_id = cap
+            elif isinstance(cap, dict):
+                cap_id = cap.get("id", "")
+            else:
+                cap_id = getattr(cap, "id", "")
+            if cap_id:
+                ids.append(str(cap_id))
+        return ids
+
     return []
 
 

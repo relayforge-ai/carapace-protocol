@@ -27,6 +27,13 @@ export class DelegationSigningError extends DelegationError {
   }
 }
 
+export class ReplayDetected extends DelegationError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReplayDetected';
+  }
+}
+
 export class CapabilityEscalation extends DelegationError {
   readonly requested: string[];
   readonly available: string[];
@@ -93,6 +100,7 @@ export interface DelegationVerifyResult {
   capabilities?: string[];
   chainDepth?: number;
   expiresAt?: string | null;
+  replayChecked?: boolean;
 }
 
 export interface CreateDelegationOptions {
@@ -115,11 +123,35 @@ export interface CreateDelegationOptions {
   allowUnsigned?: boolean;
 }
 
+export interface ReplayChecker {
+  checkAndMark(token: DelegationToken, now?: Date): boolean;
+}
+
+export interface VerifyDelegationOptions {
+  verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
+  now?: Date;
+  /**
+   * When true (default), tokens without a signature are rejected and
+   * verifySignatureFn must be provided. Set to false only in test/dev
+   * environments where signatures are intentionally absent.
+   */
+  strict?: boolean;
+  /**
+   * Optional check-and-mark nonce registry or callable. It must return true
+   * only when the nonce has not been used and has now been recorded.
+   */
+  replayChecker?: ReplayChecker | ((token: DelegationToken) => boolean);
+  /**
+   * Reject otherwise-valid tokens when replayChecker is absent. Defaults to
+   * false for explicit fail-open compatibility.
+   */
+  requireReplayCheck?: boolean;
+}
+
 // ── Internals ────────────────────────────────────────────────────────────────
 
 function extractCapIds(card: any): string[] {
-  const caps: any[] = card.capabilities ?? [];
-  return caps.map((c: any) => c.id).filter(Boolean);
+  return extractCapabilityIds(card);
 }
 
 function generateNonce(): string {
@@ -141,6 +173,104 @@ function generateUUID(): string {
     ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16) + hex.slice(17, 20),
     hex.slice(20, 32),
   ].join('-');
+}
+
+const NONCE_HEX_LENGTH = 32;
+
+function nonceError(nonce: string): string | null {
+  if (!nonce) return 'missing_nonce';
+  if (nonce.length !== NONCE_HEX_LENGTH || !/^[0-9a-fA-F]+$/.test(nonce)) {
+    return 'malformed_nonce';
+  }
+  return null;
+}
+
+function replayKey(token: DelegationToken): string {
+  return `${token.delegator_card_id}:${token.nonce}`;
+}
+
+export class InMemoryNonceRegistry implements ReplayChecker {
+  private seen = new Map<string, number>();
+
+  /**
+   * Return true only if token.nonce has not been seen for this delegator.
+   *
+   * A true result records the nonce immediately. This registry is process-local;
+   * production runtimes should provide a durable, shared checker.
+   */
+  checkAndMark(token: DelegationToken, now: Date = new Date()): boolean {
+    if (nonceError(token.nonce)) return false;
+
+    this.purgeExpired(now);
+    const key = replayKey(token);
+    if (this.seen.has(key)) return false;
+
+    const tokenExp = parseExpiresAt(token.expires_at);
+    this.seen.set(key, tokenExp ? tokenExp.getTime() : Number.POSITIVE_INFINITY);
+    return true;
+  }
+
+  clear(): void {
+    this.seen.clear();
+  }
+
+  private purgeExpired(now: Date): void {
+    for (const [key, expiresAt] of this.seen.entries()) {
+      if (Number.isFinite(expiresAt) && now.getTime() > expiresAt) {
+        this.seen.delete(key);
+      }
+    }
+  }
+}
+
+function runReplayChecker(
+  checker: ReplayChecker | ((token: DelegationToken) => boolean),
+  token: DelegationToken,
+  now: Date,
+): boolean {
+  if (typeof checker === 'function') {
+    return Boolean(checker(token));
+  }
+  return Boolean(checker.checkAndMark(token, now));
+}
+
+function applyReplayProtection(
+  token: DelegationToken,
+  options: VerifyDelegationOptions,
+  now: Date,
+): DelegationVerifyResult | null {
+  const checker = options.replayChecker;
+  if (!checker) {
+    if (options.requireReplayCheck) {
+      return { valid: false, reason: 'missing_replay_checker', tokenId: token.id };
+    }
+    return null;
+  }
+
+  const nonceReason = nonceError(token.nonce);
+  if (nonceReason) {
+    return { valid: false, reason: nonceReason, tokenId: token.id };
+  }
+
+  try {
+    if (!runReplayChecker(checker, token, now)) {
+      return {
+        valid: false,
+        reason: 'replay_detected',
+        tokenId: token.id,
+        replayChecked: true,
+      };
+    }
+  } catch (e) {
+    return {
+      valid: false,
+      reason: `replay_check_error: ${e}`,
+      tokenId: token.id,
+      replayChecked: true,
+    };
+  }
+
+  return null;
 }
 
 function isCardExpired(card: any): boolean {
@@ -335,19 +465,10 @@ export function createDelegation(opts: CreateDelegationOptions): DelegationToken
 export function verifyDelegation(
   token: DelegationToken,
   delegatorCard: any,
-  options?: {
-    verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
-    now?: Date;
-    /**
-     * When true (default), tokens without a signature are rejected and
-     * verifySignatureFn must be provided. Set to false only in test/dev
-     * environments where signatures are intentionally absent.
-     */
-    strict?: boolean;
-  },
+  options: VerifyDelegationOptions = {},
 ): DelegationVerifyResult {
-  const now = options?.now ?? new Date();
-  const strict = options?.strict ?? true;
+  const now = options.now ?? new Date();
+  const strict = options.strict ?? true;
 
   // Token expiry
   if (new Date(token.expires_at).getTime() < now.getTime()) {
@@ -381,12 +502,12 @@ export function verifyDelegation(
     if (!token.signature) {
       return { valid: false, reason: 'unsigned_token', tokenId: token.id };
     }
-    if (!options?.verifySignatureFn) {
+    if (!options.verifySignatureFn) {
       return { valid: false, reason: 'missing_verify_signature_fn', tokenId: token.id };
     }
   }
 
-  if (options?.verifySignatureFn && token.signature) {
+  if (options.verifySignatureFn && token.signature) {
     const payload = new TextEncoder().encode(signablePayload(token));
     try {
       if (!options.verifySignatureFn(payload, token.signature, token.delegator_public_key)) {
@@ -397,6 +518,9 @@ export function verifyDelegation(
     }
   }
 
+  const replayFailure = applyReplayProtection(token, options, now);
+  if (replayFailure) return replayFailure;
+
   return {
     valid: true,
     tokenId: token.id,
@@ -405,6 +529,7 @@ export function verifyDelegation(
     capabilities: token.delegated_capabilities,
     chainDepth: token.parent_delegation_id ? 1 : 0,
     expiresAt: token.expires_at,
+    replayChecked: Boolean(options.replayChecker),
   };
 }
 
@@ -413,26 +538,22 @@ export function verifyDelegation(
 export function verifyDelegationChain(
   tokens: DelegationToken[],
   rootCard: any,
-  options?: {
-    verifySignatureFn?: (payload: Uint8Array, sig: string, pubKey: string) => boolean;
-    now?: Date;
-    /**
-     * When true (default), tokens without a signature are rejected and
-     * verifySignatureFn must be provided. Set to false only in test/dev
-     * environments where signatures are intentionally absent.
-     */
-    strict?: boolean;
-  },
+  options: VerifyDelegationOptions = {},
 ): DelegationVerifyResult {
   if (tokens.length === 0) {
     return { valid: false, reason: 'empty_chain' };
   }
 
-  const now = options?.now ?? new Date();
-  const strict = options?.strict ?? true;
+  const now = options.now ?? new Date();
+  const strict = options.strict ?? true;
 
   // Verify root
-  const rootResult = verifyDelegation(tokens[0], rootCard, { ...options, now });
+  const rootResult = verifyDelegation(tokens[0], rootCard, {
+    ...options,
+    now,
+    replayChecker: undefined,
+    requireReplayCheck: false,
+  });
   if (!rootResult.valid) {
     return { valid: false, reason: `root_link_failed: ${rootResult.reason}`, tokenId: tokens[0].id, chainDepth: 0 };
   }
@@ -498,12 +619,12 @@ export function verifyDelegationChain(
       if (!token.signature) {
         return { valid: false, reason: `unsigned_token at link ${i}`, tokenId: token.id, chainDepth: i };
       }
-      if (!options?.verifySignatureFn) {
+      if (!options.verifySignatureFn) {
         return { valid: false, reason: `missing_verify_signature_fn at link ${i}`, tokenId: token.id, chainDepth: i };
       }
     }
 
-    if (options?.verifySignatureFn && token.signature) {
+    if (options.verifySignatureFn && token.signature) {
       const payload = new TextEncoder().encode(signablePayload(token));
       try {
         if (!options.verifySignatureFn(payload, token.signature, token.delegator_public_key)) {
@@ -519,6 +640,19 @@ export function verifyDelegationChain(
     prevExpiry = tokenExp;
   }
 
+  for (let i = 0; i < tokens.length; i++) {
+    const replayFailure = applyReplayProtection(tokens[i], options, now);
+    if (replayFailure) {
+      return {
+        valid: false,
+        reason: `${replayFailure.reason ?? 'replay_check_failed'} at link ${i}`,
+        tokenId: tokens[i].id,
+        chainDepth: i,
+        replayChecked: replayFailure.replayChecked,
+      };
+    }
+  }
+
   const final = tokens[tokens.length - 1];
   return {
     valid: true,
@@ -528,6 +662,7 @@ export function verifyDelegationChain(
     capabilities: final.delegated_capabilities,
     chainDepth: tokens.length,
     expiresAt: final.expires_at,
+    replayChecked: Boolean(options.replayChecker),
   };
 }
 

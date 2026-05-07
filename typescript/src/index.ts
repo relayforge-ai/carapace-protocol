@@ -6,12 +6,15 @@ export {
   enforce,
   enforceAll,
   enforceAny,
+  extractCapabilityIds,
   hasCapability,
   CapabilityDenied,
   CardExpired,
   EnforcementPolicy,
   type CardLike,
   type Capability,
+  type CapabilityCollection,
+  type CapabilityInput,
   type PolicyRules,
 } from './enforce';
 
@@ -42,11 +45,13 @@ export {
 export {
   DelegationError,
   DelegationSigningError,
+  ReplayDetected,
   CapabilityEscalation,
   DelegationExpired,
   RedelegationDepthExceeded,
   DelegatorCardInvalid,
   TTLExceedsDelegator,
+  InMemoryNonceRegistry,
   createDelegation,
   verifyDelegation,
   verifyDelegationChain,
@@ -60,6 +65,8 @@ export {
   type DelegationToken,
   type DelegationVerifyResult,
   type CreateDelegationOptions,
+  type ReplayChecker,
+  type VerifyDelegationOptions,
 } from './delegation';
 
 export {

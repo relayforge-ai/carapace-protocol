@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import json
 import secrets
+import string
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -103,6 +105,11 @@ class SignatureInvalid(DelegationError):
 
 class DelegationSigningError(DelegationError):
     """Signing failed or was skipped without explicit allow_unsigned=True."""
+    pass
+
+
+class ReplayDetected(DelegationError):
+    """Delegation token nonce has already been used."""
     pass
 
 
@@ -187,6 +194,131 @@ class DelegationVerifyResult:
     capabilities: list[str] = field(default_factory=list)
     chain_depth: int = 0
     expires_at: str | None = None
+    replay_checked: bool = False
+
+
+# ── Replay Protection ─────────────────────────────────────────────────────────
+
+NONCE_HEX_LENGTH = 32
+
+
+class InMemoryNonceRegistry:
+    """
+    Process-local nonce registry for replay checks.
+
+    This is useful for tests and single-process runtimes. Production systems
+    should provide a durable, shared checker with the same check-and-mark
+    semantics.
+    """
+
+    def __init__(self) -> None:
+        self._seen: dict[tuple[str, str], datetime | None] = {}
+        self._lock = threading.Lock()
+
+    def check_and_mark(
+        self,
+        token: DelegationToken,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """
+        Return True only if token.nonce has not been seen for this delegator.
+
+        A True result records the nonce immediately. A False result means the
+        nonce is malformed, missing, or already used.
+        """
+        if _nonce_error(token.nonce):
+            return False
+
+        current = now or datetime.now(timezone.utc)
+        token_exp = parse_expires_at(token.expires_at)
+        key = (token.delegator_card_id, token.nonce)
+
+        with self._lock:
+            self._purge_expired(current)
+            if key in self._seen:
+                return False
+            self._seen[key] = token_exp
+            return True
+
+    def clear(self) -> None:
+        """Clear all recorded nonces."""
+        with self._lock:
+            self._seen.clear()
+
+    def _purge_expired(self, now: datetime) -> None:
+        expired = [
+            key for key, expires_at in self._seen.items()
+            if expires_at is not None and now > expires_at
+        ]
+        for key in expired:
+            del self._seen[key]
+
+
+def _nonce_error(nonce: str) -> str | None:
+    if not nonce:
+        return "missing_nonce"
+    if (
+        len(nonce) != NONCE_HEX_LENGTH
+        or any(ch not in string.hexdigits for ch in nonce)
+    ):
+        return "malformed_nonce"
+    return None
+
+
+def _run_replay_checker(
+    replay_checker: Any,
+    token: DelegationToken,
+    now: datetime,
+) -> bool:
+    if hasattr(replay_checker, "check_and_mark"):
+        return bool(replay_checker.check_and_mark(token, now=now))
+    return bool(replay_checker(token))
+
+
+def _apply_replay_protection(
+    token: DelegationToken,
+    *,
+    replay_checker: Any | None,
+    require_replay_check: bool,
+    now: datetime,
+) -> DelegationVerifyResult | None:
+    if replay_checker is None:
+        if require_replay_check:
+            return DelegationVerifyResult(
+                valid=False,
+                reason="missing_replay_checker",
+                token_id=token.id,
+            )
+        return None
+
+    nonce_reason = _nonce_error(token.nonce)
+    if nonce_reason:
+        return DelegationVerifyResult(
+            valid=False,
+            reason=nonce_reason,
+            token_id=token.id,
+        )
+
+    try:
+        accepted = _run_replay_checker(replay_checker, token, now)
+    except Exception as e:
+        return DelegationVerifyResult(
+            valid=False,
+            reason=f"replay_check_error: {e}",
+            token_id=token.id,
+            replay_checked=True,
+        )
+
+    if not accepted:
+        return DelegationVerifyResult(
+            valid=False,
+            reason="replay_detected",
+            token_id=token.id,
+            replay_checked=True,
+        )
+
+    return None
 
 
 # ── Capability Subset Validation ──────────────────────────────────────────────
@@ -295,7 +427,7 @@ def create_delegation(
     )
     if isinstance(delegator_card, dict):
         delegator_pubkey = delegator_card.get("owner", {}).get("public_key", "")
-        delegator_caps = [c["id"] for c in delegator_card.get("capabilities", [])]
+        delegator_caps = _extract_capability_ids(delegator_card)
         delegator_expiry = delegator_card.get("expires_at")
     else:
         owner = getattr(delegator_card, "owner", None)
@@ -462,6 +594,8 @@ def verify_delegation(
     verify_signature_fn: Any | None = None,
     now: datetime | None = None,
     strict: bool = True,
+    replay_checker: Any | None = None,
+    require_replay_check: bool = False,
 ) -> DelegationVerifyResult:
     """
     Verify a single delegation token against the delegator's card.
@@ -482,6 +616,12 @@ def verify_delegation(
         strict: When True (default), tokens without a signature are rejected and
             verify_signature_fn must be provided. Set to False only in test/dev
             environments where signatures are intentionally absent.
+        replay_checker: Optional check-and-mark nonce registry or callable. It
+            must return True only when the nonce has not been used and has now
+            been recorded.
+        require_replay_check: If True, reject otherwise-valid tokens when no
+            replay_checker is supplied. Defaults to False for explicit fail-open
+            compatibility.
 
     Returns:
         DelegationVerifyResult
@@ -536,10 +676,7 @@ def verify_delegation(
         )
 
     # ── Check capability subset ───────────────────────────────────────────
-    if isinstance(delegator_card, dict):
-        delegator_caps = [c["id"] for c in delegator_card.get("capabilities", [])]
-    else:
-        delegator_caps = _extract_capability_ids(delegator_card)
+    delegator_caps = _extract_capability_ids(delegator_card)
 
     try:
         validate_capability_subset(token.delegated_capabilities, delegator_caps)
@@ -584,6 +721,15 @@ def verify_delegation(
                 token_id=token.id,
             )
 
+    replay_failure = _apply_replay_protection(
+        token,
+        replay_checker=replay_checker,
+        require_replay_check=require_replay_check,
+        now=current,
+    )
+    if replay_failure is not None:
+        return replay_failure
+
     # ── All checks passed ─────────────────────────────────────────────────
     return DelegationVerifyResult(
         valid=True,
@@ -593,6 +739,7 @@ def verify_delegation(
         capabilities=token.delegated_capabilities,
         chain_depth=0 if token.is_root else 1,
         expires_at=token.expires_at,
+        replay_checked=replay_checker is not None,
     )
 
 
@@ -605,6 +752,8 @@ def verify_delegation_chain(
     verify_signature_fn: Any | None = None,
     now: datetime | None = None,
     strict: bool = True,
+    replay_checker: Any | None = None,
+    require_replay_check: bool = False,
 ) -> DelegationVerifyResult:
     """
     Verify a full delegation chain from root delegator to final delegate.
@@ -630,6 +779,12 @@ def verify_delegation_chain(
         strict: When True (default), tokens without a signature are rejected and
             verify_signature_fn must be provided. Set to False only in test/dev
             environments where signatures are intentionally absent.
+        replay_checker: Optional check-and-mark nonce registry or callable. It
+            is applied only after the full chain passes structural, expiry,
+            capability, and signature checks.
+        require_replay_check: If True, reject otherwise-valid chains when no
+            replay_checker is supplied. Defaults to False for explicit fail-open
+            compatibility.
     """
     if not tokens:
         return DelegationVerifyResult(valid=False, reason="empty_chain")
@@ -782,6 +937,23 @@ def verify_delegation_chain(
         prev_caps = token.delegated_capabilities
         prev_expiry = parse_expires_at(token.expires_at)
 
+    for i, token in enumerate(normalized):
+        replay_failure = _apply_replay_protection(
+            token,
+            replay_checker=replay_checker,
+            require_replay_check=require_replay_check,
+            now=current,
+        )
+        if replay_failure is not None:
+            reason = replay_failure.reason or "replay_check_failed"
+            return DelegationVerifyResult(
+                valid=False,
+                reason=f"{reason} at link {i}",
+                token_id=token.id,
+                chain_depth=i,
+                replay_checked=replay_failure.replay_checked,
+            )
+
     # ── Chain valid ───────────────────────────────────────────────────────
     final = normalized[-1]
     return DelegationVerifyResult(
@@ -792,6 +964,7 @@ def verify_delegation_chain(
         capabilities=final.delegated_capabilities,
         chain_depth=len(normalized),
         expires_at=final.expires_at,
+        replay_checked=replay_checker is not None,
     )
 
 
