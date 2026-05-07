@@ -298,16 +298,25 @@ export function createDelegation(opts: CreateDelegationOptions): DelegationToken
   // Sign
   let signed = false;
   if (signFn && delegatorPrivateKey) {
+    let signature: string | undefined;
     try {
       const payload = new TextEncoder().encode(signablePayload(token));
-      token.signature = signFn(payload, delegatorPrivateKey);
-      signed = true;
+      signature = signFn(payload, delegatorPrivateKey);
     } catch (e) {
       if (!allowUnsigned) {
         throw new DelegationSigningError(
           `Signing failed: ${e}. Pass allowUnsigned: true (test/dev only) to suppress this error.`
         );
       }
+    }
+    if (signature) {
+      token.signature = signature;
+      signed = true;
+    } else if (!allowUnsigned) {
+      throw new DelegationSigningError(
+        'Signing returned an empty signature. Pass allowUnsigned: true (test/dev only) ' +
+        'to create an unsigned delegation token.'
+      );
     }
   }
 

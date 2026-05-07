@@ -189,7 +189,7 @@ export class ProtectedWriteApproval {
    * Supports fnmatch-style globs (`*` and `**`).
    */
   coversPath(path: string): boolean {
-    return fnmatch(path.replace(/\\/g, '/'), this.pathScope);
+    return fnmatch(path.replace(/\\/g, '/'), this.pathScope.replace(/\\/g, '/'));
   }
 }
 
@@ -205,6 +205,28 @@ export interface AuditLogEntryData {
   approvalGateWordPrefix: string | null;
   issuedBy: string | null;
 }
+
+type AuditLogEntryInput =
+  Omit<
+    AuditLogEntryData,
+    | 'entryId'
+    | 'timestamp'
+    | 'patternMatched'
+    | 'approvalTokenId'
+    | 'approvalGateWordPrefix'
+    | 'issuedBy'
+  > &
+  Partial<
+    Pick<
+      AuditLogEntryData,
+      | 'entryId'
+      | 'timestamp'
+      | 'patternMatched'
+      | 'approvalTokenId'
+      | 'approvalGateWordPrefix'
+      | 'issuedBy'
+    >
+  >;
 
 /**
  * An immutable record of a protected-write check outcome.
@@ -222,7 +244,7 @@ export class AuditLogEntry {
   readonly approvalGateWordPrefix: string | null;
   readonly issuedBy: string | null;
 
-  constructor(data: Omit<AuditLogEntryData, 'entryId' | 'timestamp'> & Partial<Pick<AuditLogEntryData, 'entryId' | 'timestamp'>>) {
+  constructor(data: AuditLogEntryInput) {
     this.entryId = data.entryId ?? crypto.randomBytes(8).toString('hex');
     this.timestamp = data.timestamp ?? new Date().toISOString();
     this.path = data.path;

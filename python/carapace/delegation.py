@@ -398,14 +398,22 @@ def create_delegation(
     if sign_fn is not None and delegator_private_key:
         try:
             payload = token.signable_payload().encode("utf-8")
-            token.signature = sign_fn(payload, delegator_private_key)
-            signed = True
+            signature = sign_fn(payload, delegator_private_key)
         except Exception as e:
             if not allow_unsigned:
                 raise DelegationSigningError(
                     f"Signing failed: {e}. Pass allow_unsigned=True (test/dev only) "
                     "to suppress this error."
                 ) from e
+        else:
+            if signature:
+                token.signature = signature
+                signed = True
+            elif not allow_unsigned:
+                raise DelegationSigningError(
+                    "Signing returned an empty signature. Pass allow_unsigned=True "
+                    "(test/dev only) to create an unsigned delegation token."
+                )
     elif delegator_private_key:
         # If no sign_fn, try to use Ed25519 directly
         try:

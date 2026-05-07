@@ -194,7 +194,9 @@ class ProtectedWriteApproval:
         Matching is done with fnmatch so the scope can be an exact path like
         ``"IDENTITY.md"`` or a glob like ``"config/*"``.
         """
-        return fnmatch.fnmatch(path, self.path_scope)
+        normalised_path = path.replace("\\", "/")
+        normalised_scope = self.path_scope.replace("\\", "/")
+        return fnmatch.fnmatch(normalised_path, normalised_scope)
 
 
 @dataclass
