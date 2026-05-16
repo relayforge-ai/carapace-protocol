@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "carapace-sdk"
-version = "0.3.0"
-description = "Carapace Protocol SDK — cryptographic identity and trust for AI agents"
+version = "0.4.0"
+description = "Carapace Protocol SDK — trust enforcement, provenance, compliance profiles, and escalation workflows for AI agents"
 readme = "../../README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "Ryan Anderson", email = "ryan@relayforge.tools"}]

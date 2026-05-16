@@ -2,6 +2,26 @@
 
 All notable changes to the Carapace Protocol are documented here.
 
+## [0.4.0] — 2026-05-16
+
+### Added
+- **Epistemic tracking** — local, operator-owned hash-chained provenance logs
+  with integrity verification, audit export, and query helpers. ARIA does not
+  store these logs.
+- **Compliance profiles** — Python and TypeScript SDK support for named policy
+  bundles, built-in V0.4 profiles, capability/TTL/version/attestation checks,
+  and violation/warning reporting.
+- **Escalation workflows** — SDK policies and triggers for single capability,
+  wildcard, capability-combination, and predicate-based human approval checks.
+- Public Python and TypeScript package entrypoints now export the V0.4 modules.
+
+### Changed
+- Package metadata and README now describe the V0.4 trust stack consistently.
+- TypeScript epistemic integrity verification now recomputes entry data hashes,
+  not only chain links.
+- Legal entity binding remains a future policy hook and is reported as a
+  warning when requested, not presented as a shipped V0.4 verifier.
+
 ## [0.3.0] — 2026-04-08
 
 ### Added

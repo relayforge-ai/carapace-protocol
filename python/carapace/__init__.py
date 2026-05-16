@@ -1,4 +1,4 @@
-"""Carapace v0.3 — Enforcement, Expiry, Versioning, Delegation"""
+"""Carapace v0.4 — Enforcement, Expiry, Versioning, Delegation, V0.4 Trust Workflows"""
 
 from carapace.enforce import (
     enforce,
@@ -58,5 +58,33 @@ from carapace.protected_paths import (
     is_protected_path,
     register_audit_sink,
 )
+from carapace.epistemic import (
+    GENESIS_HASH,
+    ConfidenceLevel,
+    EpistemicEntry,
+    EpistemicLog,
+    Source,
+    hash_data,
+)
+from carapace.compliance import (
+    BUILTIN_PROFILES,
+    ComplianceProfile,
+    ComplianceResult,
+    ComplianceViolation,
+    evaluate_compliance,
+)
+from carapace.escalation import (
+    INDUSTRIAL_ESCALATION_POLICY,
+    EscalationDenied,
+    EscalationPolicy,
+    EscalationRequest,
+    EscalationRequired,
+    EscalationStatus,
+    EscalationTimedOut,
+    EscalationTrigger,
+    EscalationUrgency,
+    check_all_escalations,
+    check_escalation,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

@@ -1,509 +1,210 @@
 # Carapace Protocol
 
 [![PyPI version](https://img.shields.io/pypi/v/carapace-sdk?color=C45E2A&label=PyPI)](https://pypi.org/project/carapace-sdk/)
-[![npm version](https://img.shields.io/npm/v/carapace-sdk?color=C45E2A&label=npm)](https://www.npmjs.com/package/carapace-sdk)
+[![npm version](https://img.shields.io/npm/v/%40carapace%2Fsdk?color=C45E2A&label=npm)](https://www.npmjs.com/package/@carapace/sdk)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![NIST NCCoE](https://img.shields.io/badge/NIST%20NCCoE-submitted-lightgrey)](https://relayforge.tools/trust)
 
-**Carapace is an open credentialing protocol for AI agents. Think journeyman card, not password.**
+Carapace is RelayForge's portable trust envelope for AI agents. V0.4 keeps the V0.2/V0.3 runtime controls and adds the V0.4 trust stack:
 
-An agent that can authenticate isn't the same as an agent you can trust. Authentication tells you who's knocking. Carapace tells you who built the agent, what it's certified to do, whether it's been tampered with, and who's accountable if it isn't.
+- runtime capability enforcement, card expiry, versioning, and delegation chains
+- local epistemic provenance logs owned by the operator
+- compliance profile evaluation in the SDK
+- human approval escalation checks in the SDK
 
-```python
-import os
-from carapace import CarapaceClient
+ARIA is the registry side of the stack. It stores agent cards, grants, compliance profiles, and escalation records. Epistemic logs are intentionally not stored in ARIA; they remain local operator-owned provenance artifacts.
 
-client = CarapaceClient(
-    registry_url="https://api.relayforge.tools/aria/v1",
-    owner_private_key=os.environ["CARAPACE_OWNER_KEY"]
-)
-card = client.register(
-    name="ResearchAgent",
-    description="Searches and summarizes topics",
-    framework="langchain",
-    capabilities=[{"id": "research", "name": "Research", "description": "Searches and summarizes topics"}],
-    endpoints=[{"protocol": "https", "url": "https://my-agent.com/run"}]
-)
-print(card.id)  # your agent is now in the registry
-```
+## Packages
 
----
+Python:
 
-## Contents
-
-- [Installation](#installation)
-- [Quickstart](#quickstart)
-- [Core Concepts](#core-concepts)
-- [API Reference](#api-reference)
-- [MCP Integration](#mcp-integration)
-- [A2A Integration](#a2a-integration)
-- [Standards Alignment](#standards-alignment)
-- [Contributing](#contributing)
-
----
-
-## Installation
-
-**Python**
 ```bash
 pip install carapace-sdk
 ```
 
-**TypeScript / Node**
-```bash
-npm install carapace-sdk
-```
-
-Requires Python 3.9+ or Node 18+. No other runtime dependencies beyond the package.
-
----
-
-## Quickstart
-
-### 1. Generate a keypair
-
-Your Ed25519 private key signs every agent card you register. Generate one and store it in your environment — it never leaves your process.
+TypeScript:
 
 ```bash
-# Python
-python -m carapace keygen
-# → CARAPACE_OWNER_KEY=a1b2c3d4...  (64-char hex)
-
-# Node
-npx carapace-sdk keygen
-# → CARAPACE_OWNER_KEY=a1b2c3d4...  (64-char hex)
+npm install @carapace/sdk
 ```
 
-Add to your environment:
-```bash
-export CARAPACE_OWNER_KEY=a1b2c3d4...
-```
+The current SDK packages expose library functions and data structures. Registry client helpers and CLIs are not part of this package surface.
 
-### 2. Initialize a client
+## Python Quickstart
 
-**Python**
 ```python
-import os
-from carapace import CarapaceClient
-
-client = CarapaceClient(
-    registry_url="https://api.relayforge.tools/aria/v1",
-    owner_private_key=os.environ["CARAPACE_OWNER_KEY"]
+from carapace import (
+    BUILTIN_PROFILES,
+    INDUSTRIAL_ESCALATION_POLICY,
+    EpistemicLog,
+    Source,
+    check_escalation,
+    enforce,
+    evaluate_compliance,
+    hash_data,
+    make_expires_at,
 )
-```
 
-**TypeScript**
-```typescript
-import { CarapaceClient } from 'carapace-sdk';
-
-const client = new CarapaceClient({
-  registryUrl: process.env.CARAPACE_REGISTRY_URL
-    ?? 'https://api.relayforge.tools/aria/v1',
-  ownerKey: process.env.CARAPACE_OWNER_KEY!,  // required — throws if undefined
-});
-```
-
-### 3. Register an agent
-
-```python
-card = client.register(
-    name="ResearchAgent",
-    description="Searches and summarizes topics",
-    framework="langchain",
-    capabilities=[
-        {
-            "id":          "research",
-            "name":        "Research",
-            "description": "Searches and summarizes topics"
-        }
+card = {
+    "id": "agent-123",
+    "capabilities": [
+        {"id": "carapace:read:database", "name": "Read database"},
     ],
-    endpoints=[
-        {
-            "protocol": "https",
-            "url":      "https://my-agent.com/run"
-        }
-    ]
-)
-
-print(card.id)                # uuid — your agent's permanent registry ID
-print(card.signature)         # Ed25519 hex — tamper-evident proof of registration
-print(card.owner.public_key)  # derived public key — safe to share
-```
-
-### 4. Verify an agent
-
-Before your system acts on a message from an agent, verify it.
-
-```python
-result = client.verify(agent_id="uuid-of-agent")
-
-if result.verified:
-    print("Trusted:", result.agent.name)
-else:
-    print("Rejected:", result.reason)
-```
-
-**Offline verification** — no registry call required:
-```python
-ok = client.verify_local(
-    card=card,
-    signature=card.signature,
-    public_key=card.owner.public_key
-)
-```
-
-### 5. Discover agents
-
-```python
-# By capability
-agents = client.discover(capability="research")
-
-# By framework
-agents = client.discover(framework="langchain")
-
-# Full-text + limit
-agents = client.discover(text="summarize documents", limit=10)
-```
-
----
-
-## Core Concepts
-
-### Agent Cards
-
-An Agent Card is a signed JSON document that describes an agent: who owns it, what it can do, and how to reach it. Cards are built at registration, signed with your Ed25519 private key, and stored in the ARIA registry. The card is the credential — it travels with the agent.
-
-```json
-{
-  "id": "a3f7b2c1-9e4d-4a8f-b6d2-1c3e5f7a9b0d",
-  "name": "ResearchAgent",
-  "description": "Searches and summarizes topics",
-  "framework": "langchain",
-  "capabilities": [
-    { "id": "research", "name": "Research", "description": "..." }
-  ],
-  "endpoints": [
-    { "protocol": "https", "url": "https://my-agent.com/run" }
-  ],
-  "owner": {
-    "public_key": "b9e2..."
-  },
-  "signature": "7f3a...",
-  "status": "active"
+    "expires_at": make_expires_at(ttl_hours=12),
+    "card_version": 2,
+    "framework": "custom",
 }
-```
 
-### Signatures
+enforce(card, "carapace:read:database")
 
-Every card is signed using Ed25519 (FIPS 186-5 / RFC 8032) over a JCS-canonical (RFC 8785) representation of the payload. JCS canonicalization means the signature is stable regardless of key ordering or whitespace variation in the JSON.
-
-**Signed payload:** The signature covers all card fields **except** `signature` and `status`. These two fields are excluded from the canonical representation before signing. This means:
-- The registry can update `status` (e.g., to `"revoked"`) without invalidating the signature.
-- The `signature` field itself is naturally excluded (it cannot be part of its own input).
-
-What this guarantees:
-
-- **Tamper evidence** — any modification to a signed field after signing invalidates the signature
-- **Owner binding** — only the holder of the private key could have produced the signature
-- **Offline verifiability** — verification requires only the card, the signature, and the public key
-
-The private key never leaves your process. The public key is stored in ARIA. Revocation is handled by the registry (status: `"revoked"`) — revoked cards fail `verify()` but remain in the registry for audit purposes.
-
-### ARIA Registry
-
-ARIA (Agent Registry & Identity Authority) is the hosted registry at `https://api.relayforge.tools/aria/v1`. It is a live endpoint, not a dashboard.
-
-What ARIA does:
-
-- Stores and indexes Agent Cards
-- Serves verification requests
-- Supports independent evaluator attestations (signed objects appended to cards by third parties)
-- Returns MCP `tools/list` and A2A `/.well-known/agent.json` manifests on request
-
-ARIA is queried at runtime by agents and host systems. It is developer-accessible with no enterprise gating.
-
-Self-hosting is supported — point `registry_url` at your own ARIA-compatible endpoint.
-
-### Attestations
-
-Attestations are signed statements from third-party evaluators appended to an Agent Card. They allow independent parties (auditors, certification bodies, automated test suites) to vouch for specific properties of an agent without modifying the original card or its signature.
-
-An attestation contains:
-- `evaluator` — identifier of the attesting party (public key or registry ID)
-- `claim` — a structured statement (e.g., `{"capability": "research", "level": "verified"}`)
-- `signature` — Ed25519 signature over the JCS-canonical attestation payload, produced by the evaluator's key
-- `timestamp` — ISO 8601 time of attestation
-
-Attestations are stored alongside the card in ARIA and returned with `client.get()` and `client.verify()` responses. They do not affect the card's own signature. Attestation APIs are forthcoming — see the [issue tracker](https://github.com/ryan10sa-star/carapace-protocol/issues) for status.
-
----
-
-## API Reference
-
-### `CarapaceClient`
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `registry_url` | `str` | Yes | ARIA endpoint. Override with `CARAPACE_REGISTRY_URL`. |
-| `owner_private_key` | `str` (hex) | Yes | 64-char hex Ed25519 private key. Set via `CARAPACE_OWNER_KEY`. |
-
-### `client.register()`
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `name` | `str` | Yes | Agent name. |
-| `description` | `str` | Yes | What the agent does. |
-| `framework` | `str` | Yes | e.g. `langchain`, `autogen`, `custom` |
-| `capabilities` | `list[Capability]` | Yes | Capability objects (see below). |
-| `endpoints` | `list[Endpoint]` | Yes | Endpoint objects (see below). |
-| `version` | `str` | No | Semver string. |
-| `tags` | `list[str]` | No | Searchable tags. |
-| `metadata` | `dict` | No | Arbitrary key-value pairs. |
-
-Returns `AgentCard`.
-
-**Capability object**
-
-| Field | Type | Required |
-|---|---|---|
-| `id` | `str` | Yes |
-| `name` | `str` | Yes |
-| `description` | `str` | Yes |
-
-**Endpoint object**
-
-| Field | Type | Required |
-|---|---|---|
-| `protocol` | `str` | Yes — `https`, `a2a`, `mcp` |
-| `url` | `str` | Yes |
-
-### `client.verify(agent_id)`
-
-Returns `VerifyResult`.
-
-| Field | Type | Description |
-|---|---|---|
-| `.verified` | `bool` | `True` if signature valid and agent is active. |
-| `.reason` | `str \| None` | Failure reason. `None` on success. |
-| `.agent` | `AgentCard \| None` | Full card if verified. |
-
-**Error behavior:**
-- If `agent_id` does not exist in the registry, returns `VerifyResult(verified=False, reason="agent_not_found", agent=None)`.
-- If the registry is unreachable, raises a `ConnectionError` (Python) or rejects with a network error (TypeScript).
-- Each call makes a fresh request to ARIA — results are not cached.
-
-### `client.verify_local(card, signature, public_key)`
-
-Ed25519 verification with no network call. Returns `bool`.
-
-### `client.discover(filters)`
-
-| Parameter | Type | Description |
-|---|---|---|
-| `capability` | `str` | Filter by capability id. |
-| `framework` | `str` | Filter by framework. |
-| `tag` | `str` | Filter by a single tag (matches any tag in the agent's `tags` list). |
-| `text` | `str` | Full-text search. |
-| `limit` | `int` | Max results. Default: `20`. |
-
-Returns `list[AgentCard]`.
-
-### `client.get(agent_id)`
-
-Fetch a card by UUID. Returns `AgentCard`.
-
-### `client.public_key()`
-
-Return the hex-encoded public key derived from your owner key. Returns `str`.
-
-### `generate_tools_list(card)`
-
-Convert an `AgentCard` into an MCP-compatible `tools/list` response object.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `card` | `AgentCard` | Yes | The agent card to convert. |
-
-Returns a `dict` (Python) or plain object (TypeScript) conforming to the MCP `tools/list` schema.
-
-### `generate_well_known_card(card)`
-
-Convert an `AgentCard` into an A2A-compatible `/.well-known/agent.json` document.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `card` | `AgentCard` | Yes | The agent card to convert. |
-
-Returns a `dict` (Python) or plain object (TypeScript) conforming to the A2A agent card schema.
-
-### TypeScript API
-
-The TypeScript SDK mirrors the Python API with idiomatic naming conventions:
-
-| Python | TypeScript |
-|---|---|
-| `CarapaceClient(registry_url=..., owner_private_key=...)` | `new CarapaceClient({ registryUrl, ownerKey })` |
-| `client.register(name=..., ...)` | `client.register({ name, ... })` |
-| `client.verify(agent_id=...)` | `client.verify(agentId)` |
-| `client.verify_local(card, signature, public_key)` | `client.verifyLocal(card, signature, publicKey)` |
-| `client.discover(capability=...)` | `client.discover({ capability })` |
-| `client.get(agent_id)` | `client.get(agentId)` |
-| `client.public_key()` | `client.publicKey()` |
-| `generate_tools_list(card)` | `generateToolsList(card)` |
-| `generate_well_known_card(card)` | `generateWellKnownCard(card)` |
-
----
-
-## MCP Integration
-
-Wrap your MCP server to verify caller identity on every tool invocation. Unverified callers are rejected before your handlers run.
-
-**Python**
-```python
-from carapace.integrations.mcp import CarapaceMiddleware
-from mcp.server import Server
-
-server = Server("my-mcp-server")
-secure_server = CarapaceMiddleware(
-    server,
-    client=client,
-    agent_id="uuid-of-registered-agent"
+log = EpistemicLog(agent_id=card["id"])
+log.record(
+    action="classified_record",
+    sources=[Source(agent_id="extractor", data_hash=hash_data("source payload"))],
+    confidence=0.87,
+    reasoning="Matched an approved extraction rule.",
 )
-```
+assert log.verify_integrity()[0] is True
 
-**TypeScript**
-```typescript
-import { carapaceMcp } from 'carapace-sdk/mcp';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+profile = BUILTIN_PROFILES["carapace-profile:general-saas"]
+compliance = evaluate_compliance(card, profile)
 
-const server = new McpServer({ name: 'my-mcp-server', version: '1.0.0' });
-const secureServer = carapaceMcp(server, {
-  client,
-  agentId: 'uuid-of-registered-agent',
-});
-```
-
-`CarapaceMiddleware` / `carapaceMcp`:
-- Verifies caller identity against ARIA on each tool call
-- Attaches trust context to tool call metadata
-- Rejects unverified callers before your handlers execute
-
-Export your card as an MCP `tools/list`:
-```python
-from carapace import generate_tools_list
-tools = generate_tools_list(card)
-```
-
----
-
-## A2A Integration
-
-Mount a verified A2A agent on your existing web framework. Carapace handles the `/.well-known/agent.json` endpoint and caller verification.
-
-**Python (FastAPI)**
-```python
-from carapace.integrations.a2a import A2ACarapaceAgent
-from fastapi import FastAPI
-
-app = FastAPI()
-agent = A2ACarapaceAgent(
-    client=client,
-    agent_id="uuid-of-registered-agent",
-    app=app
+escalation = check_escalation(
+    policy=INDUSTRIAL_ESCALATION_POLICY,
+    requested_capabilities=["carapace:execute:process_control"],
+    agent_id=card["id"],
+    context="Attempting a protected process-control action.",
 )
-
-# Auto-mounted:
-# GET  /.well-known/agent.json  →  A2A agent card
-# POST /run                     →  verified task endpoint
+if escalation:
+    print(escalation.to_webhook_payload())
 ```
 
-**TypeScript (Express)**
-```typescript
-import { CarapaceA2AAgent } from 'carapace-sdk/a2a';
-import express from 'express';
+## TypeScript Quickstart
 
-const app = express();
-const agent = new CarapaceA2AAgent({
-  client,
-  agentId: 'uuid-of-registered-agent',
-  app,
+```ts
+import {
+  BUILTIN_PROFILES,
+  EpistemicLog,
+  INDUSTRIAL_ESCALATION_POLICY,
+  checkEscalation,
+  enforce,
+  evaluateCompliance,
+  hashData,
+  makeExpiresAt,
+} from '@carapace/sdk';
+
+const card = {
+  id: 'agent-123',
+  capabilities: [{ id: 'carapace:read:database', name: 'Read database' }],
+  expires_at: makeExpiresAt({ ttlHours: 12 }),
+  card_version: 2,
+  framework: 'custom',
+};
+
+enforce(card, 'carapace:read:database');
+
+const log = new EpistemicLog('agent-123');
+await log.record({
+  action: 'classified_record',
+  sources: [{ agent_id: 'extractor', data_hash: await hashData('source payload') }],
+  confidence: 0.87,
+  reasoning: 'Matched an approved extraction rule.',
 });
 
-// Auto-mounted:
-// GET  /.well-known/agent.json  →  A2A agent card
-// POST /run                     →  verified task endpoint
+const profile = BUILTIN_PROFILES['carapace-profile:general-saas'];
+const compliance = evaluateCompliance(card, profile);
+
+const escalation = checkEscalation(
+  INDUSTRIAL_ESCALATION_POLICY,
+  ['carapace:execute:process_control'],
+  'agent-123',
+  'Attempting a protected process-control action.',
+);
 ```
 
-Generate an A2A card directly:
-```python
-from carapace import generate_well_known_card
-a2a_card = generate_well_known_card(card)
-# serve at /.well-known/agent.json
-```
+## V0.4 Modules
 
----
+### Enforcement
 
-## Standards Alignment
+Use `enforce`, `enforce_all` / `enforceAll`, `enforce_any` / `enforceAny`, and `has_capability` / `hasCapability` before tool execution. Capability extraction accepts list, string, dict, and dict-form capability collections so V0.2/V0.3 callers keep working.
 
-| Standard | Alignment |
-|---|---|
-| Ed25519 | FIPS 186-5, RFC 8032 |
-| JSON Canonicalization | RFC 8785 (JCS) |
-| NIST AI RMF 1.0 | GOVERN, MAP, MEASURE, MANAGE |
-| ISA/IEC 62443 | Industrial cybersecurity |
-| A2A Protocol | Native manifest output |
-| MCP Protocol | Native tools/list output |
+### Expiry
 
-Carapace was submitted to NIST NCCoE for standards consideration in March 2026. The technical addendum mapping the protocol to NIST AI RMF 1.0 is available at [relayforge.tools/trust](https://relayforge.tools/trust).
+Use `make_expires_at` / `makeExpiresAt`, `check_expiry` / `checkExpiry`, `is_expired` / `isExpired`, and `time_remaining` / `timeRemaining` to enforce card TTLs and no-immortal-card policy.
 
-The design intent: a trust envelope that works across every agent protocol stack — MCP for tool access, A2A for agent routing, and whatever comes next. Carapace is the identity layer underneath all of them.
+### Versioning
 
----
+Use the version-chain helpers to validate successor relationships, owner continuity, and supersedes registration.
 
-## Security Model
+### Delegation
 
-- **Private key isolation** — the owner private key is used locally to sign payloads and never transmitted
-- **Tamper evidence** — Ed25519 over JCS-canonical JSON; any post-signing modification invalidates the signature
-- **Revocation** — soft-delete via ARIA (`status: "revoked"`); cards remain in registry for audit
-- **Offline verification** — `verify_local()` requires no network; suitable for air-gapped environments
-- **Cross-language consistency** — JS and Python produce byte-identical signatures; verified in CI
+Use `create_delegation`, `verify_delegation`, `verify_delegation_chain`, `enforce_delegated`, and `redelegate` for signed agent-to-agent scoped delegation. Replay protection and TTL checks remain part of the V0.3 behavior.
 
-To report a vulnerability: open a security advisory on this repository or email security@relayforge.tools.
+### Epistemic Tracking
 
----
+`EpistemicLog` is an append-only hash chain for local provenance. Each entry records the acting agent, action, sources, confidence, reasoning, optional delegation ID, and hashes. Operators can call `verify_integrity()`, `export_audit_trail()`, `export_json()`, and `query(...)`.
 
-## Contributing
+ARIA does not store these logs in V0.4.
+
+### Compliance Profiles
+
+`ComplianceProfile` defines named policy bundles. `evaluate_compliance(...)` returns a `ComplianceResult` with blocking violations and warnings.
+
+Built-in V0.4 profiles:
+
+- `carapace-profile:isa-62443`
+- `carapace-profile:hipaa`
+- `carapace-profile:fedramp-moderate`
+- `carapace-profile:nerc-cip`
+- `carapace-profile:general-saas`
+
+The profile model includes a `require_legal_entity` field as a forward-compatible policy hook. Legal entity binding is not a shipped V0.4 verifier; profiles that require it produce a warning.
+
+### Escalation
+
+`EscalationPolicy` and `EscalationTrigger` define when human approval is needed. A trigger may match a single capability, a wildcard capability, a capability combination, or a local predicate. `check_escalation(...)` returns the first matching `EscalationRequest`; `check_all_escalations(...)` returns all matches.
+
+`EscalationRequest.to_webhook_payload()` emits the V0.4 webhook shape for approval systems. ARIA is responsible for storing escalation records and approval/denial status.
+
+## ARIA Registry Contract
+
+The companion `aria-registry` service is responsible for registry persistence and public trust surfaces. In V0.4 it supports:
+
+- agent cards, card history, usage, heartbeat, tools, grants, and scoped API keys
+- compliance profile storage and retrieval
+- escalation creation, approval, denial, and status lookup
+- trust pages that present compliance posture, escalation state, local epistemic provenance, and Clawmark evidence
+
+Epistemic logs remain local to the SDK operator by design.
+
+## Development
+
+Python:
 
 ```bash
-git clone https://github.com/ryan10sa-star/carapace-protocol
-cd carapace-protocol
-
-# Python
+cd python
 pip install -e ".[dev]"
 pytest
+```
 
-# TypeScript
+TypeScript:
+
+```bash
+cd typescript
 npm install
+npm run build
 npm test
 ```
 
-Tests run offline — no registry connection required for the test suite.
+Root-level package files mirror the Python package for local workspace compatibility. Keep both Python package layouts and the TypeScript entrypoint in sync when changing public APIs.
 
-Before opening a PR:
-- All existing tests must pass
-- New functionality needs test coverage
-- If you're changing the signing or canonicalization logic, add a cross-language interop test
+## Version Notes
 
-Open an issue before starting large changes. The core signing spec (Ed25519 + JCS) is stable and intentionally not up for redesign — if you have a standards-level objection, file it as an issue with a reference to the relevant RFC or NIST document.
+Current release: `0.4.0`.
 
----
+V0.5 concepts such as legal entity binding, cryptographic audit logs, and browser verification are prepared only as internal extension seams. They are not public V0.4 endpoints or shipped product claims.
 
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
 
----
-
 Built by [RelayForge](https://relayforge.tools). Trust infrastructure for the agentic web.
-
-[relayforge.tools/trust](https://relayforge.tools/trust) · [ARIA Registry](https://api.relayforge.tools/aria/v1) · [PyPI](https://pypi.org/project/carapace-sdk/) · [npm](https://www.npmjs.com/package/carapace-sdk)
