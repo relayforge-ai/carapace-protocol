@@ -1,4 +1,4 @@
-"""Carapace SDK v0.3.0 — Portable Trust Envelope for AI Agents"""
+"""Carapace SDK v0.4.0 — Portable Trust Envelope for AI Agents"""
 
 from .enforce import (
     CapabilityDenied,
@@ -68,8 +68,36 @@ from .protected_paths import (
     is_protected_path,
     register_audit_sink,
 )
+from .epistemic import (
+    GENESIS_HASH,
+    ConfidenceLevel,
+    EpistemicEntry,
+    EpistemicLog,
+    Source,
+    hash_data,
+)
+from .compliance import (
+    BUILTIN_PROFILES,
+    ComplianceProfile,
+    ComplianceResult,
+    ComplianceViolation,
+    evaluate_compliance,
+)
+from .escalation import (
+    INDUSTRIAL_ESCALATION_POLICY,
+    EscalationDenied,
+    EscalationPolicy,
+    EscalationRequest,
+    EscalationRequired,
+    EscalationStatus,
+    EscalationTimedOut,
+    EscalationTrigger,
+    EscalationUrgency,
+    check_all_escalations,
+    check_escalation,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # enforce
@@ -134,4 +162,29 @@ __all__ = [
     "get_audit_log",
     "is_protected_path",
     "register_audit_sink",
+    # epistemic
+    "GENESIS_HASH",
+    "ConfidenceLevel",
+    "EpistemicEntry",
+    "EpistemicLog",
+    "Source",
+    "hash_data",
+    # compliance
+    "BUILTIN_PROFILES",
+    "ComplianceProfile",
+    "ComplianceResult",
+    "ComplianceViolation",
+    "evaluate_compliance",
+    # escalation
+    "INDUSTRIAL_ESCALATION_POLICY",
+    "EscalationDenied",
+    "EscalationPolicy",
+    "EscalationRequest",
+    "EscalationRequired",
+    "EscalationStatus",
+    "EscalationTimedOut",
+    "EscalationTrigger",
+    "EscalationUrgency",
+    "check_all_escalations",
+    "check_escalation",
 ]

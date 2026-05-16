@@ -1,5 +1,6 @@
 /**
- * Carapace SDK v0.3 — Enforcement, Expiry, Versioning, Delegation, Protected Paths
+ * Carapace SDK v0.4 — Enforcement, Expiry, Versioning, Delegation, Protected Paths,
+ * Epistemic Tracking, Compliance Profiles, and Escalation Workflows
  */
 
 export {
@@ -86,3 +87,31 @@ export {
   type CheckProtectedWriteOptions,
   type ProtectedWriteApprovalOpts,
 } from './protected_paths';
+
+export {
+  ConfidenceLevel,
+  EpistemicLog,
+  GENESIS_HASH,
+  hashData,
+  type EpistemicEntry,
+  type Source,
+} from './epistemic';
+
+export {
+  BUILTIN_PROFILES,
+  evaluateCompliance,
+  type ComplianceProfile,
+  type ComplianceResult,
+  type ComplianceViolation,
+} from './compliance';
+
+export {
+  INDUSTRIAL_ESCALATION_POLICY,
+  EscalationStatus,
+  EscalationUrgency,
+  checkAllEscalations,
+  checkEscalation,
+  type EscalationPolicy,
+  type EscalationRequest,
+  type EscalationTrigger,
+} from './escalation';
