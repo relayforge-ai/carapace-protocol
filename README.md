@@ -1,210 +1,186 @@
-# Carapace Protocol
+<p align="center">
+  <img src="docs/carapace-logo.png" alt="Carapace Protocol" width="200" />
+</p>
 
-[![PyPI version](https://img.shields.io/pypi/v/carapace-sdk?color=C45E2A&label=PyPI)](https://pypi.org/project/carapace-sdk/)
-[![npm version](https://img.shields.io/npm/v/%40carapace%2Fsdk?color=C45E2A&label=npm)](https://www.npmjs.com/package/@carapace/sdk)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+<h1 align="center">🛡️ Carapace Protocol</h1>
 
-Carapace is RelayForge's portable trust envelope for AI agents. V0.4 keeps the V0.2/V0.3 runtime controls and adds the V0.4 trust stack:
+<h3 align="center">Cryptographic identity, capability verification, and trust delegation<br/>for AI agents. Open standard. No vendor lock-in.</h3>
 
-- runtime capability enforcement, card expiry, versioning, and delegation chains
-- local epistemic provenance logs owned by the operator
-- compliance profile evaluation in the SDK
-- human approval escalation checks in the SDK
+<p align="center">
+  <a href="https://relayforge.tools/aria/v1">ARIA Registry</a> •
+  <a href="https://relayforge.tools/whitepaper">Whitepaper</a> •
+  <a href="https://www.npmjs.com/package/carapace-sdk">npm</a> •
+  <a href="https://pypi.org/project/carapace-sdk/">PyPI</a> •
+  <a href="https://relayforge.tools">RelayForge</a> •
+  <a href="https://discord.gg/relayforge">Discord</a>
+</p>
 
-ARIA is the registry side of the stack. It stores agent cards, grants, compliance profiles, and escalation records. Epistemic logs are intentionally not stored in ARIA; they remain local operator-owned provenance artifacts.
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v0.2.0-C45E2A?style=flat-square" alt="v0.2.0" />
+  <img src="https://img.shields.io/badge/spec_license-CC_BY_4.0-4CAF50?style=flat-square" alt="CC BY 4.0" />
+  <img src="https://img.shields.io/badge/crypto-Ed25519%2FJCS-F5F0E8?style=flat-square&labelColor=0A0A0A" alt="Ed25519/JCS" />
+  <img src="https://img.shields.io/npm/v/carapace-sdk?style=flat-square&label=npm&color=C45E2A" alt="npm version" />
+  <img src="https://img.shields.io/pypi/v/carapace-sdk?style=flat-square&label=pypi&color=C45E2A" alt="PyPI version" />
+</p>
 
-## Packages
+---
 
-Python:
+> **The agent ecosystem has a trust problem.** Tools are shipping faster than anyone can vet them. Agents are acting on behalf of humans with no verifiable identity. Carapace exists to fix that — with cryptography, not promises.
+
+---
+
+## The Problem
+
+Every agent platform lets agents call tools. Almost none of them answer these questions:
+
+- **Who built this tool?** No cryptographic proof of authorship.
+- **What can it actually do?** Capability claims aren't verifiable.
+- **What changed since last time?** No auditable mutation history.
+- **Why should an agent — or a human — trust it?** Because the README said so?
+
+Carapace answers all four. With Ed25519 signatures, JCS canonicalization, and the ARIA registry as the public ledger.
+
+<br/>
+
+## How It Works
+
+```
+┌──────────────────────────────────────────────┐
+│              CARAPACE IDENTITY                │
+│                                               │
+│  Ed25519 keypair → agent identity             │
+│  JCS canonicalization → deterministic signing  │
+│  ARIA registration → public verification      │
+│  Capability attestation → what it can do      │
+│  Epistemology tracking → what it knows (v0.2) │
+└──────────────────────────────────────────────┘
+```
+
+Every Carapace-wrapped agent gets:
+
+| Component | What It Does |
+|:----------|:-------------|
+| **Identity Card** | Ed25519 public key as the agent's verifiable identity |
+| **Capability Manifest** | Cryptographically signed declaration of what the agent can do |
+| **Provenance Chain** | Auditable history of tool use, capability changes, and trust delegations |
+| **Epistemology Record** | What the agent knows, how it knows it, and confidence levels (v0.2.0) |
+
+<br/>
+
+## Installation
 
 ```bash
+# JavaScript/TypeScript
+npm install carapace-sdk
+
+# Python
 pip install carapace-sdk
 ```
 
-TypeScript:
+<br/>
 
-```bash
-npm install @carapace/sdk
-```
+## Quick Start
 
-The current SDK packages expose library functions and data structures. Registry client helpers and CLIs are not part of this package surface.
+**JavaScript/TypeScript:**
 
-## Python Quickstart
+```typescript
+import { CarapaceAgent, AriaRegistry } from 'carapace-sdk';
 
-```python
-from carapace import (
-    BUILTIN_PROFILES,
-    INDUSTRIAL_ESCALATION_POLICY,
-    EpistemicLog,
-    Source,
-    check_escalation,
-    enforce,
-    evaluate_compliance,
-    hash_data,
-    make_expires_at,
-)
-
-card = {
-    "id": "agent-123",
-    "capabilities": [
-        {"id": "carapace:read:database", "name": "Read database"},
-    ],
-    "expires_at": make_expires_at(ttl_hours=12),
-    "card_version": 2,
-    "framework": "custom",
-}
-
-enforce(card, "carapace:read:database")
-
-log = EpistemicLog(agent_id=card["id"])
-log.record(
-    action="classified_record",
-    sources=[Source(agent_id="extractor", data_hash=hash_data("source payload"))],
-    confidence=0.87,
-    reasoning="Matched an approved extraction rule.",
-)
-assert log.verify_integrity()[0] is True
-
-profile = BUILTIN_PROFILES["carapace-profile:general-saas"]
-compliance = evaluate_compliance(card, profile)
-
-escalation = check_escalation(
-    policy=INDUSTRIAL_ESCALATION_POLICY,
-    requested_capabilities=["carapace:execute:process_control"],
-    agent_id=card["id"],
-    context="Attempting a protected process-control action.",
-)
-if escalation:
-    print(escalation.to_webhook_payload())
-```
-
-## TypeScript Quickstart
-
-```ts
-import {
-  BUILTIN_PROFILES,
-  EpistemicLog,
-  INDUSTRIAL_ESCALATION_POLICY,
-  checkEscalation,
-  enforce,
-  evaluateCompliance,
-  hashData,
-  makeExpiresAt,
-} from '@carapace/sdk';
-
-const card = {
-  id: 'agent-123',
-  capabilities: [{ id: 'carapace:read:database', name: 'Read database' }],
-  expires_at: makeExpiresAt({ ttlHours: 12 }),
-  card_version: 2,
-  framework: 'custom',
-};
-
-enforce(card, 'carapace:read:database');
-
-const log = new EpistemicLog('agent-123');
-await log.record({
-  action: 'classified_record',
-  sources: [{ agent_id: 'extractor', data_hash: await hashData('source payload') }],
-  confidence: 0.87,
-  reasoning: 'Matched an approved extraction rule.',
+// Create an agent identity
+const agent = await CarapaceAgent.create({
+  name: 'my-lobster',
+  capabilities: ['email-read', 'calendar-write'],
 });
 
-const profile = BUILTIN_PROFILES['carapace-profile:general-saas'];
-const compliance = evaluateCompliance(card, profile);
+// Register with ARIA
+const registry = new AriaRegistry('https://api.relayforge.tools/aria/v1');
+await registry.register(agent);
 
-const escalation = checkEscalation(
-  INDUSTRIAL_ESCALATION_POLICY,
-  ['carapace:execute:process_control'],
-  'agent-123',
-  'Attempting a protected process-control action.',
-);
+// Sign an action
+const signed = agent.sign({ action: 'read-email', timestamp: Date.now() });
 ```
 
-## V0.4 Modules
+**Python:**
 
-### Enforcement
+```python
+from carapace_sdk import CarapaceAgent, AriaRegistry
 
-Use `enforce`, `enforce_all` / `enforceAll`, `enforce_any` / `enforceAny`, and `has_capability` / `hasCapability` before tool execution. Capability extraction accepts list, string, dict, and dict-form capability collections so V0.2/V0.3 callers keep working.
+# Create an agent identity
+agent = CarapaceAgent.create(
+    name="my-lobster",
+    capabilities=["email-read", "calendar-write"],
+)
 
-### Expiry
+# Register with ARIA
+registry = AriaRegistry("https://api.relayforge.tools/aria/v1")
+registry.register(agent)
 
-Use `make_expires_at` / `makeExpiresAt`, `check_expiry` / `checkExpiry`, `is_expired` / `isExpired`, and `time_remaining` / `timeRemaining` to enforce card TTLs and no-immortal-card policy.
-
-### Versioning
-
-Use the version-chain helpers to validate successor relationships, owner continuity, and supersedes registration.
-
-### Delegation
-
-Use `create_delegation`, `verify_delegation`, `verify_delegation_chain`, `enforce_delegated`, and `redelegate` for signed agent-to-agent scoped delegation. Replay protection and TTL checks remain part of the V0.3 behavior.
-
-### Epistemic Tracking
-
-`EpistemicLog` is an append-only hash chain for local provenance. Each entry records the acting agent, action, sources, confidence, reasoning, optional delegation ID, and hashes. Operators can call `verify_integrity()`, `export_audit_trail()`, `export_json()`, and `query(...)`.
-
-ARIA does not store these logs in V0.4.
-
-### Compliance Profiles
-
-`ComplianceProfile` defines named policy bundles. `evaluate_compliance(...)` returns a `ComplianceResult` with blocking violations and warnings.
-
-Built-in V0.4 profiles:
-
-- `carapace-profile:isa-62443`
-- `carapace-profile:hipaa`
-- `carapace-profile:fedramp-moderate`
-- `carapace-profile:nerc-cip`
-- `carapace-profile:general-saas`
-
-The profile model includes a `require_legal_entity` field as a forward-compatible policy hook. Legal entity binding is not a shipped V0.4 verifier; profiles that require it produce a warning.
-
-### Escalation
-
-`EscalationPolicy` and `EscalationTrigger` define when human approval is needed. A trigger may match a single capability, a wildcard capability, a capability combination, or a local predicate. `check_escalation(...)` returns the first matching `EscalationRequest`; `check_all_escalations(...)` returns all matches.
-
-`EscalationRequest.to_webhook_payload()` emits the V0.4 webhook shape for approval systems. ARIA is responsible for storing escalation records and approval/denial status.
-
-## ARIA Registry Contract
-
-The companion `aria-registry` service is responsible for registry persistence and public trust surfaces. In V0.4 it supports:
-
-- agent cards, card history, usage, heartbeat, tools, grants, and scoped API keys
-- compliance profile storage and retrieval
-- escalation creation, approval, denial, and status lookup
-- trust pages that present compliance posture, escalation state, local epistemic provenance, and Clawmark evidence
-
-Epistemic logs remain local to the SDK operator by design.
-
-## Development
-
-Python:
-
-```bash
-cd python
-pip install -e ".[dev]"
-pytest
+# Sign an action
+signed = agent.sign({"action": "read-email", "timestamp": time.time()})
 ```
 
-TypeScript:
+<br/>
 
-```bash
-cd typescript
-npm install
-npm run build
-npm test
-```
+## ARIA Registry
 
-Root-level package files mirror the Python package for local workspace compatibility. Keep both Python package layouts and the TypeScript entrypoint in sync when changing public APIs.
+ARIA (Agent Registry & Identity Authority) is the FastAPI backend that serves as the public ledger for Carapace identities.
 
-## Version Notes
+| Endpoint | Purpose |
+|:---------|:--------|
+| `GET /aria/v1/agents/{id}` | Look up an agent's identity and capabilities |
+| `POST /aria/v1/agents` | Register a new agent |
+| `GET /aria/v1/agents/{id}/provenance` | Audit trail for an agent's actions |
+| `POST /aria/v1/verify` | Verify a signed capability or action |
 
-Current release: `0.4.0`.
+Base URL: `https://api.relayforge.tools/aria/v1`
 
-V0.5 concepts such as legal entity binding, cryptographic audit logs, and browser verification are prepared only as internal extension seams. They are not public V0.4 endpoints or shipped product claims.
+<br/>
 
-## License
+## Roadmap
 
-Apache 2.0. See [LICENSE](LICENSE).
+| Version | Status | Focus |
+|:--------|:-------|:------|
+| v0.1.0 | ✅ Shipped | Core identity, registration, signing |
+| v0.2.0 | ✅ Current | Epistemology tracking |
+| v0.3.0 | 🔜 Next | Delegation chains (most time-sensitive) |
+| v0.4.0 | Planned | Compliance profiles |
+| v1.0.0 | Planned | Legal entity binding, full A2A commerce support |
 
-Built by [RelayForge](https://relayforge.tools). Trust infrastructure for the agentic web.
+<br/>
+
+## Standards Contributions
+
+Carapace has been submitted as a standards contribution to:
+
+- **NIST** — Agent identity and trust infrastructure
+- **ISA** — Industrial AI safety and verification
+
+The whitepaper covering consumer and industrial safety is published at [relayforge.tools/whitepaper](https://relayforge.tools/whitepaper).
+
+<br/>
+
+## Design Principles
+
+1. **Cryptography, not promises.** If it can't be verified with a signature, it's not trust.
+2. **Open standard, not a product moat.** Spec is CC BY 4.0. Build on it.
+3. **Portable trust.** If trust only works inside one vendor's app, it's not durable.
+4. **Works with MCP.** Carapace wraps existing protocols — it doesn't replace them.
+5. **Industrial-grade.** If it can't satisfy a refinery compliance review, it's not ready.
+
+<br/>
+
+## Related Repositories
+
+| Repo | Purpose |
+|:-----|:--------|
+| [relayforge](https://github.com/ryan10sa-star/relayforge) | Main site, trust layer docs |
+| [lobster-runtime](https://github.com/ryan10sa-star/lobster-runtime) | Agent runtime (Carapace integrated) |
+| [relayforge-wizard](https://github.com/ryan10sa-star/relayforge-wizard) | Lobster Launcher frontend |
+
+<br/>
+
+---
+
+<p align="center">
+  <sub>Part of <a href="https://relayforge.tools">RelayForge</a> · Spec license: CC BY 4.0 · Anacortes, WA</sub>
+</p>
