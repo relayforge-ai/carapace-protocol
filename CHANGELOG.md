@@ -17,6 +17,9 @@ All notable changes to the Carapace Protocol are documented here.
 
 ### Changed
 - Package metadata and README now describe the V0.4 trust stack consistently.
+- Canonical TypeScript package metadata now uses `carapace-sdk` on npm,
+  matching the public package and README. `@relayforge/carapace-sdk` remains
+  an older registry artifact and `@carapace/sdk` was unpublished manifest drift.
 - TypeScript epistemic integrity verification now recomputes entry data hashes,
   not only chain links.
 - Legal entity binding remains a future policy hook and is reported as a

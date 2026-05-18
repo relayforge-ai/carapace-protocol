@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.2.0-C45E2A?style=flat-square" alt="v0.2.0" />
+  <img src="https://img.shields.io/badge/version-v0.4.0-C45E2A?style=flat-square" alt="v0.4.0" />
   <img src="https://img.shields.io/badge/spec_license-CC_BY_4.0-4CAF50?style=flat-square" alt="CC BY 4.0" />
   <img src="https://img.shields.io/badge/crypto-Ed25519%2FJCS-F5F0E8?style=flat-square&labelColor=0A0A0A" alt="Ed25519/JCS" />
   <img src="https://img.shields.io/npm/v/carapace-sdk?style=flat-square&label=npm&color=C45E2A" alt="npm version" />
@@ -52,7 +52,7 @@ Carapace answers all four. With Ed25519 signatures, JCS canonicalization, and th
 │  JCS canonicalization → deterministic signing  │
 │  ARIA registration → public verification      │
 │  Capability attestation → what it can do      │
-│  Epistemology tracking → what it knows (v0.2) │
+│  Epistemic tracking → what it knows (v0.4)    │
 └──────────────────────────────────────────────┘
 ```
 
@@ -63,7 +63,7 @@ Every Carapace-wrapped agent gets:
 | **Identity Card** | Ed25519 public key as the agent's verifiable identity |
 | **Capability Manifest** | Cryptographically signed declaration of what the agent can do |
 | **Provenance Chain** | Auditable history of tool use, capability changes, and trust delegations |
-| **Epistemology Record** | What the agent knows, how it knows it, and confidence levels (v0.2.0) |
+| **Epistemic Record** | What the agent knows, how it knows it, and confidence levels (v0.4.0) |
 
 <br/>
 
@@ -77,6 +77,9 @@ npm install carapace-sdk
 pip install carapace-sdk
 ```
 
+Canonical package names for `v0.4.0` are `carapace-sdk` on npm and
+`carapace-sdk` on PyPI. Python imports use the `carapace` module.
+
 <br/>
 
 ## Quick Start
@@ -84,39 +87,74 @@ pip install carapace-sdk
 **JavaScript/TypeScript:**
 
 ```typescript
-import { CarapaceAgent, AriaRegistry } from 'carapace-sdk';
+import {
+  BUILTIN_PROFILES,
+  EpistemicLog,
+  evaluateCompliance,
+  enforce,
+  hashData,
+  makeExpiresAt,
+} from 'carapace-sdk';
 
-// Create an agent identity
-const agent = await CarapaceAgent.create({
-  name: 'my-lobster',
-  capabilities: ['email-read', 'calendar-write'],
+const card = {
+  id: 'agent-1',
+  capabilities: [{ id: 'carapace:read:calendar' }],
+  expires_at: makeExpiresAt({ ttlHours: 24 }),
+  card_version: 2,
+  framework: 'custom',
+};
+
+enforce(card, 'carapace:read:calendar');
+
+const result = evaluateCompliance(
+  card,
+  BUILTIN_PROFILES['carapace-profile:general-saas'],
+);
+console.log(result.compliant);
+
+const log = new EpistemicLog('agent-1');
+await log.record({
+  action: 'checked_calendar_policy',
+  sources: [{ agent_id: 'planner', data_hash: await hashData('policy') }],
+  confidence: 0.9,
 });
-
-// Register with ARIA
-const registry = new AriaRegistry('https://api.relayforge.tools/aria/v1');
-await registry.register(agent);
-
-// Sign an action
-const signed = agent.sign({ action: 'read-email', timestamp: Date.now() });
 ```
 
 **Python:**
 
 ```python
-from carapace_sdk import CarapaceAgent, AriaRegistry
-
-# Create an agent identity
-agent = CarapaceAgent.create(
-    name="my-lobster",
-    capabilities=["email-read", "calendar-write"],
+from carapace import (
+    BUILTIN_PROFILES,
+    EpistemicLog,
+    Source,
+    enforce,
+    evaluate_compliance,
+    hash_data,
+    make_expires_at,
 )
 
-# Register with ARIA
-registry = AriaRegistry("https://api.relayforge.tools/aria/v1")
-registry.register(agent)
+card = {
+    "id": "agent-1",
+    "capabilities": [{"id": "carapace:read:calendar"}],
+    "expires_at": make_expires_at(ttl_hours=24),
+    "card_version": 2,
+    "framework": "custom",
+}
 
-# Sign an action
-signed = agent.sign({"action": "read-email", "timestamp": time.time()})
+enforce(card, "carapace:read:calendar")
+
+result = evaluate_compliance(
+    card,
+    BUILTIN_PROFILES["carapace-profile:general-saas"],
+)
+print(result.compliant)
+
+log = EpistemicLog(agent_id="agent-1")
+log.record(
+    action="checked_calendar_policy",
+    sources=[Source(agent_id="planner", data_hash=hash_data("policy"))],
+    confidence=0.9,
+)
 ```
 
 <br/>
@@ -141,9 +179,9 @@ Base URL: `https://api.relayforge.tools/aria/v1`
 | Version | Status | Focus |
 |:--------|:-------|:------|
 | v0.1.0 | ✅ Shipped | Core identity, registration, signing |
-| v0.2.0 | ✅ Current | Epistemology tracking |
-| v0.3.0 | 🔜 Next | Delegation chains (most time-sensitive) |
-| v0.4.0 | Planned | Compliance profiles |
+| v0.2.0 | ✅ Shipped | Runtime enforcement, expiry, and card versioning |
+| v0.3.0 | ✅ Shipped | Delegation chains and protected path guard |
+| v0.4.0 | ✅ Current | Epistemic tracking, compliance profiles, escalation workflows |
 | v1.0.0 | Planned | Legal entity binding, full A2A commerce support |
 
 <br/>
