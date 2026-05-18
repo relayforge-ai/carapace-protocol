@@ -1,5 +1,5 @@
 {
-  "name": "@carapace/sdk",
+  "name": "carapace-sdk",
   "version": "0.4.0",
   "description": "Portable trust envelope for AI agents: enforcement, expiry, versioning, delegation, epistemic tracking, compliance profiles, and escalation workflows",
   "main": "dist/index.js",
@@ -11,6 +11,18 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/relayforge-ai/carapace-protocol.git",
+    "directory": "typescript"
+  },
+  "homepage": "https://github.com/relayforge-ai/carapace-protocol#readme",
+  "bugs": {
+    "url": "https://github.com/relayforge-ai/carapace-protocol/issues"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
   "keywords": ["carapace", "agent", "trust", "delegation", "capabilities", "compliance", "provenance", "escalation"],
   "license": "Apache-2.0",
   "devDependencies": {
