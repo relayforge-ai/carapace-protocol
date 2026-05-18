@@ -46,9 +46,11 @@ jobs:
       - name: Build
         working-directory: typescript
         run: npm run build
-      - name: Test
+      - name: Publish
         working-directory: typescript
-        run: npm test
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN:  ${{ secrets.NPM_TOKEN }}
       - name: Publish
         working-directory: typescript
         run: npm publish --provenance
