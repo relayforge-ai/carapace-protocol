@@ -4,7 +4,7 @@
  * Receipts provide a cryptographic audit trail for tool calls.
  * They store SHA-256 hashes only — no PII or raw content.
  *
- * Posting receipts to ARIA is fire-and-forget. A failed post MUST NOT
+ * Posting receipts to ARIA is best-effort. A failed post MUST NOT
  * block the tool call.
  */
 
@@ -22,7 +22,8 @@ export interface ReceiptPayload {
 export interface CreateReceiptOptions {
   agentId?: string;
   status?: 'ok' | 'error';
-  privateKeyBytes?: Uint8Array;
+  /** Ed25519 key pair from `crypto.subtle.generateKey`. Public key is extracted automatically. */
+  keyPair?: { privateKey: CryptoKey; publicKey: CryptoKey };
 }
 
 export interface PostReceiptOptions {
@@ -30,15 +31,23 @@ export interface PostReceiptOptions {
   timeout?: number;
 }
 
+/** Recursively sort object keys for canonical JSON serialization (RFC 8785 key order). */
+function sortKeys(obj: unknown): unknown {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sortKeys);
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
+    sorted[key] = sortKeys((obj as Record<string, unknown>)[key]);
+  }
+  return sorted;
+}
+
 /**
- * SHA-256 of deterministic JSON string.
+ * SHA-256 of deterministic JSON string (keys sorted recursively).
  * Uses SubtleCrypto (available in browser and Node 18+).
  */
 async function sha256Json(obj: unknown): Promise<string> {
-  const canonical = JSON.stringify(
-    obj,
-    Object.keys(obj as Record<string, unknown>).sort(),
-  );
+  const canonical = JSON.stringify(sortKeys(obj));
   const buf = new TextEncoder().encode(canonical);
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(hash))
@@ -49,9 +58,9 @@ async function sha256Json(obj: unknown): Promise<string> {
 /**
  * Create a signed tool-call receipt.
  *
- * When `privateKeyBytes` is provided (32-byte Ed25519 private key),
- * the receipt is signed using WebCrypto Ed25519. Requires Chrome 113+,
- * Firefox 126+, Safari 17+, or Node 20+.
+ * When `keyPair` is provided (Ed25519 CryptoKeyPair from `crypto.subtle.generateKey`),
+ * the receipt is signed using WebCrypto Ed25519 and `public_key` is populated.
+ * Requires Chrome 113+, Firefox 126+, Safari 17+, or Node 20+.
  *
  * The returned object is ready to POST to /aria/v1/receipts.
  */
@@ -61,7 +70,7 @@ export async function createReceipt(
   result: unknown = null,
   options: CreateReceiptOptions = {},
 ): Promise<ReceiptPayload> {
-  const { agentId = null, status = 'ok', privateKeyBytes } = options;
+  const { agentId = null, status = 'ok', keyPair } = options;
 
   const argsHash = await sha256Json(args);
   const resultHash = result !== null ? await sha256Json(result) : null;
@@ -79,27 +88,19 @@ export async function createReceipt(
   let signature: string | null = null;
   let publicKeyHex: string | null = null;
 
-  if (privateKeyBytes) {
-    const keyPair = await crypto.subtle.importKey(
-      'raw',
-      privateKeyBytes,
-      { name: 'Ed25519' },
-      false,
-      ['sign'],
-    );
+  if (keyPair) {
     const sigBuf = await crypto.subtle.sign(
       'Ed25519',
-      keyPair,
+      keyPair.privateKey,
       new TextEncoder().encode(callHash),
     );
     signature = Array.from(new Uint8Array(sigBuf))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
-    // Note: WebCrypto Ed25519 importKey('raw') gives a private key only.
-    // To get the public key hex, the caller should pass it separately or
-    // derive it from a CryptoKeyPair (generateKey). This is a limitation
-    // of WebCrypto's Ed25519 API for raw private key import.
-    publicKeyHex = null;
+    const pkBuf = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+    publicKeyHex = Array.from(new Uint8Array(pkBuf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   return {

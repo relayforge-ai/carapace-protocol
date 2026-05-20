@@ -94,8 +94,9 @@ export async function fetchCatalog(
     etag?: string;
   };
 
+  const rawEtag = resp.headers.get('etag') ?? '';
   const newEtag =
-    resp.headers.get('etag')?.replace(/^"|"$/g, '') ?? data.etag ?? '';
+    rawEtag.replace(/^W\//, '').replace(/^"|"$/g, '') || data.etag || '';
 
   const state: CatalogState = {
     catalog: data.catalog ?? [],

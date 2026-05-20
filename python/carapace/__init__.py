@@ -87,4 +87,18 @@ from carapace.escalation import (
     check_escalation,
 )
 
-__version__ = "0.4.0"
+from carapace.catalog import (
+    CatalogEntry,
+    CatalogState,
+    GateResult,
+    fetch_catalog,
+    run_gate_check,
+)
+from carapace.receipt import (
+    create_receipt,
+    verify_receipt,
+    post_receipt,
+    post_receipt_async,
+)
+
+__version__ = "0.5.0"
