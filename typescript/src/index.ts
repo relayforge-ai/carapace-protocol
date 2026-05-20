@@ -1,6 +1,7 @@
 /**
- * Carapace SDK v0.4 — Enforcement, Expiry, Versioning, Delegation, Protected Paths,
- * Epistemic Tracking, Compliance Profiles, and Escalation Workflows
+ * Carapace SDK v0.5.0 — Enforcement, Expiry, Versioning, Delegation, Protected Paths,
+ * Epistemic Tracking, Compliance Profiles, Escalation Workflows,
+ * Catalog Sync, and Signed Receipts
  */
 
 export {
@@ -115,3 +116,26 @@ export {
   type EscalationRequest,
   type EscalationTrigger,
 } from './escalation';
+
+// v0.5.0 — Catalog Sync
+export {
+  fetchCatalog,
+  catalogGet,
+  catalogIsActive,
+  runGateCheck,
+  type CatalogEntry,
+  type CatalogState,
+  type GateResult,
+  type FetchCatalogOptions,
+  type GateCheckOptions,
+} from './catalog';
+
+// v0.5.0 — Signed Receipts
+export {
+  createReceipt,
+  verifyReceipt,
+  postReceipt,
+  type ReceiptPayload,
+  type CreateReceiptOptions,
+  type PostReceiptOptions,
+} from './receipt';

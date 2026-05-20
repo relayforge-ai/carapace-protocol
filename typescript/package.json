@@ -1,6 +1,6 @@
 {
   "name": "carapace-sdk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Portable trust envelope for AI agents: enforcement, expiry, versioning, delegation, epistemic tracking, compliance profiles, and escalation workflows",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,7 +23,16 @@
   "publishConfig": {
     "provenance": true
   },
-  "keywords": ["carapace", "agent", "trust", "delegation", "capabilities", "compliance", "provenance", "escalation"],
+  "keywords": [
+    "carapace",
+    "agent",
+    "trust",
+    "delegation",
+    "capabilities",
+    "compliance",
+    "provenance",
+    "escalation"
+  ],
   "license": "Apache-2.0",
   "devDependencies": {
     "typescript": "^5.0.0",

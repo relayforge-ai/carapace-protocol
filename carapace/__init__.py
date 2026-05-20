@@ -1,4 +1,4 @@
-"""Carapace SDK v0.4.0 — Portable Trust Envelope for AI Agents"""
+"""Carapace SDK v0.5.0 — Portable Trust Envelope for AI Agents"""
 
 from .enforce import (
     CapabilityDenied,
@@ -97,7 +97,21 @@ from .escalation import (
     check_escalation,
 )
 
-__version__ = "0.4.0"
+from .catalog import (
+    CatalogEntry,
+    CatalogState,
+    GateResult,
+    fetch_catalog,
+    run_gate_check,
+)
+from .receipt import (
+    create_receipt,
+    post_receipt,
+    post_receipt_async,
+    verify_receipt,
+)
+
+__version__ = "0.5.0"
 
 __all__ = [
     # enforce
@@ -187,4 +201,15 @@ __all__ = [
     "EscalationUrgency",
     "check_all_escalations",
     "check_escalation",
+    # v0.5.0 — catalog
+    "CatalogEntry",
+    "CatalogState",
+    "GateResult",
+    "fetch_catalog",
+    "run_gate_check",
+    # v0.5.0 — receipts
+    "create_receipt",
+    "post_receipt",
+    "post_receipt_async",
+    "verify_receipt",
 ]
