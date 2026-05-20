@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "carapace-sdk"
-version = "0.4.0"
+version = "0.5.0"
 description = "Carapace Protocol SDK — trust enforcement, provenance, compliance profiles, and escalation workflows for AI agents"
 readme = "README.md"
 license = "Apache-2.0"
