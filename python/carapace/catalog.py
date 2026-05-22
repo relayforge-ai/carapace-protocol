@@ -20,8 +20,8 @@ class CatalogEntry:
     description: str
     endpoint_url: str
     status: str                         # active | suspended | pending
-    clawmark_score: int
-    gate_pass: bool                     # score >= 80
+    clawmark_score: float               # Clawmark aggregate, 0-5 scale (0 = unscored)
+    gate_pass: bool                     # aggregate >= 3.0
     tier: str
     safety_class: str
     certification_tier: str
@@ -31,13 +31,15 @@ class CatalogEntry:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "CatalogEntry":
+        # ARIA sends clawmark_score=null for unscored tools — treat as 0.0.
+        raw_score = d.get("clawmark_score")
         return cls(
             id=d["id"],
             name=d["name"],
             description=d.get("description", ""),
             endpoint_url=d["endpoint_url"],
             status=d["status"],
-            clawmark_score=int(d.get("clawmark_score", 0)),
+            clawmark_score=float(raw_score) if raw_score is not None else 0.0,
             gate_pass=bool(d.get("gate_pass", False)),
             tier=d.get("tier", "free"),
             safety_class=d.get("safety_class", "safe"),
@@ -103,7 +105,7 @@ class GateResult:
       1. catalog_membership  — tool is in the ARIA catalog
       2. active_status       — tool is not suspended
       3. revocation_clear    — tool is not currently revoked
-      4. clawmark_gate       — composite score >= threshold (default 80)
+      4. clawmark_gate       — Clawmark aggregate >= threshold (default 3.0, 0-5 scale)
       5. delegation_valid    — if delegated, delegation is valid and not expired
     """
     passed: bool
@@ -169,7 +171,7 @@ def run_gate_check(
     catalog: Optional[CatalogState],
     *,
     revoked_ids: Optional[set[str]] = None,
-    score_threshold: int = 80,
+    score_threshold: float = 3.0,
     delegation_valid: Optional[bool] = None,
     trust_gates_enabled: bool = True,
 ) -> GateResult:
