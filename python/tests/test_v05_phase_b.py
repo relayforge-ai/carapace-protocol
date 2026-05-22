@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
-# ─── Catalog tests ────────────────────────────────────────────────────────────
+# ─── Catalog tests ─────────────────────────────────────────────
 
 from carapace.catalog import (
     CatalogEntry,
@@ -27,7 +27,7 @@ def _make_catalog(tools=None) -> CatalogState:
                 description="Web search",
                 endpoint_url="https://brave.com/mcp",
                 status="active",
-                clawmark_score=85,
+                clawmark_score=4.5,
                 gate_pass=True,
                 tier="free",
                 safety_class="safe",
@@ -40,7 +40,7 @@ def _make_catalog(tools=None) -> CatalogState:
                 description="Low score tool",
                 endpoint_url="https://example.com/mcp",
                 status="active",
-                clawmark_score=50,
+                clawmark_score=2.0,
                 gate_pass=False,
                 tier="free",
                 safety_class="safe",
@@ -53,7 +53,7 @@ def _make_catalog(tools=None) -> CatalogState:
                 description="Suspended tool",
                 endpoint_url="https://example.com/mcp",
                 status="suspended",
-                clawmark_score=90,
+                clawmark_score=4.8,
                 gate_pass=True,
                 tier="free",
                 safety_class="safe",
@@ -77,7 +77,7 @@ class TestCatalogEntry:
             "description": "A tool",
             "endpoint_url": "https://example.com",
             "status": "active",
-            "clawmark_score": 75,
+            "clawmark_score": 4.0,
             "gate_pass": False,
             "tier": "free",
             "safety_class": "safe",
@@ -88,7 +88,7 @@ class TestCatalogEntry:
         }
         entry = CatalogEntry.from_dict(d)
         assert entry.id == "tool-1"
-        assert entry.clawmark_score == 75
+        assert entry.clawmark_score == 4.0
         assert entry.streaming_supported is True
 
     def test_from_dict_handles_missing_optional_fields(self):
@@ -108,6 +108,24 @@ class TestCatalogEntry:
         entry = CatalogEntry.from_dict(d)
         assert entry.clawmark_breakdown == {}
         assert entry.scope_requirements == {}
+
+    def test_from_dict_handles_null_score(self):
+        # ARIA sends clawmark_score=null for unscored tools.
+        d = {
+            "id": "tool-3",
+            "name": "Tool Three",
+            "description": "",
+            "endpoint_url": "https://example.com",
+            "status": "active",
+            "clawmark_score": None,
+            "gate_pass": False,
+            "tier": "free",
+            "safety_class": "safe",
+            "certification_tier": "",
+            "streaming_supported": False,
+        }
+        entry = CatalogEntry.from_dict(d)
+        assert entry.clawmark_score == 0.0
 
 
 class TestCatalogState:
@@ -182,8 +200,8 @@ class TestGateCheck:
 
     def test_custom_score_threshold(self):
         state = _make_catalog()
-        # low-score-tool has score=50; threshold=40 should pass
-        result = run_gate_check("low-score-tool", state, score_threshold=40)
+        # low-score-tool has score=2.0; threshold=1.0 should pass
+        result = run_gate_check("low-score-tool", state, score_threshold=1.0)
         assert result.passed is True
 
     def test_delegation_gate_checked_when_provided(self):
@@ -235,7 +253,7 @@ class TestFetchCatalog:
                     "description": "",
                     "endpoint_url": "https://example.com",
                     "status": "active",
-                    "clawmark_score": 80,
+                    "clawmark_score": 4.0,
                     "gate_pass": True,
                     "tier": "free",
                     "safety_class": "safe",
@@ -255,7 +273,7 @@ class TestFetchCatalog:
             assert new_etag == "xyz789"
 
 
-# ─── Receipt tests ────────────────────────────────────────────────────────────
+# ─── Receipt tests ─────────────────────────────────────────────
 
 from carapace.receipt import create_receipt, verify_receipt, post_receipt
 
@@ -382,7 +400,7 @@ class TestPostReceipt:
             assert result is False
 
 
-# ─── SDK top-level import check ───────────────────────────────────────────────
+# ─── SDK top-level import check ────────────────────────────────────
 
 class TestSDKExports:
     def test_version_is_v050(self):
