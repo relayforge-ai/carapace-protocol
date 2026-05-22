@@ -11,7 +11,8 @@ export interface CatalogEntry {
   description: string;
   endpoint_url: string;
   status: 'active' | 'suspended' | 'pending';
-  clawmark_score: number;
+  /** Clawmark aggregate on the 0-5 scale; null when the tool is unscored. */
+  clawmark_score: number | null;
   gate_pass: boolean;
   tier: string;
   safety_class: string;
@@ -129,7 +130,7 @@ export function catalogIsActive(state: CatalogState, toolId: string): boolean {
  *   1. catalog_membership — tool is in the catalog
  *   2. active_status      — tool is not suspended
  *   3. revocation_clear   — tool is not in the revoked set
- *   4. clawmark_gate      — composite score >= threshold (default 80)
+ *   4. clawmark_gate      — Clawmark aggregate >= threshold (default 3.0, 0-5 scale)
  *   5. delegation_valid   — delegation is valid (only checked when provided)
  *
  * When `trustGatesEnabled=false`, all gates pass (observe-only mode).
@@ -142,7 +143,7 @@ export function runGateCheck(
 ): GateResult {
   const {
     revokedIds,
-    scoreThreshold = 80,
+    scoreThreshold = 3.0,
     delegationValid,
     trustGatesEnabled = true,
   } = options;
@@ -198,11 +199,12 @@ export function runGateCheck(
     return { passed: false, tool_id: toolId, gates_checked, gates_failed, details, blocked_by: 'revocation_clear' };
   }
 
-  // Gate 4 — Clawmark score
+  // Gate 4 — Clawmark score (0-5 aggregate; null/unscored counts as 0)
   gates_checked.push('clawmark_gate');
-  if (entry.clawmark_score < scoreThreshold) {
+  const score = entry.clawmark_score ?? 0;
+  if (score < scoreThreshold) {
     gates_failed.push('clawmark_gate');
-    details['clawmark_gate'] = `score=${entry.clawmark_score} < threshold=${scoreThreshold}`;
+    details['clawmark_gate'] = `score=${score} < threshold=${scoreThreshold}`;
     return { passed: false, tool_id: toolId, gates_checked, gates_failed, details, blocked_by: 'clawmark_gate' };
   }
 
