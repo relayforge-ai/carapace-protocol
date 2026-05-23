@@ -393,7 +393,11 @@ from carapace.escalation import (
 def test_v04_public_entrypoint_exports():
     import carapace
 
-    assert carapace.__version__ == "0.4.0"
+    # v0.4 trust-stack APIs must remain re-exported from the top-level package
+    # across subsequent releases. The exact __version__ is verified by the v0.5
+    # phase-B test; here we only assert the package still ships a version string.
+    assert isinstance(carapace.__version__, str)
+    assert carapace.__version__ >= "0.4.0"
     assert carapace.EpistemicLog is EpistemicLog
     assert carapace.ComplianceProfile is ComplianceProfile
     assert carapace.evaluate_compliance is evaluate_compliance
