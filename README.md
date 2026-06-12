@@ -7,7 +7,7 @@
 <h3 align="center">Cryptographic identity, capability verification, and trust delegation<br/>for AI agents. Open standard. No vendor lock-in.</h3>
 
 <p align="center">
-  <a href="https://relayforge.tools/aria/v1">ARIA Registry</a> •
+  <a href="https://api.relayforge.tools/aria/v1/docs">ARIA Registry</a> •
   <a href="https://relayforge.tools/whitepaper">Whitepaper</a> •
   <a href="https://www.npmjs.com/package/carapace-sdk">npm</a> •
   <a href="https://pypi.org/project/carapace-sdk/">PyPI</a> •
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.4.0-C45E2A?style=flat-square" alt="v0.4.0" />
+  <img src="https://img.shields.io/badge/version-v0.5.0-C45E2A?style=flat-square" alt="v0.5.0" />
   <img src="https://img.shields.io/badge/spec_license-CC_BY_4.0-4CAF50?style=flat-square" alt="CC BY 4.0" />
   <img src="https://img.shields.io/badge/crypto-Ed25519%2FJCS-F5F0E8?style=flat-square&labelColor=0A0A0A" alt="Ed25519/JCS" />
   <img src="https://img.shields.io/npm/v/carapace-sdk?style=flat-square&label=npm&color=C45E2A" alt="npm version" />
@@ -77,7 +77,7 @@ npm install carapace-sdk
 pip install carapace-sdk
 ```
 
-Canonical package names for `v0.4.0` are `carapace-sdk` on npm and
+Canonical package names for `v0.5.0` are `carapace-sdk` on npm and
 `carapace-sdk` on PyPI. Python imports use the `carapace` module.
 
 <br/>
@@ -181,7 +181,8 @@ Base URL: `https://api.relayforge.tools/aria/v1`
 | v0.1.0 | ✅ Shipped | Core identity, registration, signing |
 | v0.2.0 | ✅ Shipped | Runtime enforcement, expiry, and card versioning |
 | v0.3.0 | ✅ Shipped | Delegation chains and protected path guard |
-| v0.4.0 | ✅ Current | Epistemic tracking, compliance profiles, escalation workflows |
+| v0.4.0 | ✅ Shipped | Epistemic tracking, compliance profiles, escalation workflows |
+| v0.5.0 | ✅ Current | Active trust-control alignment and registry-facing verification updates |
 | v1.0.0 | Planned | Legal entity binding, full A2A commerce support |
 
 <br/>
