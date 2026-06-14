@@ -26,6 +26,20 @@ yarn-debug.log*
 yarn-error.log*
 *.tsbuildinfo
 lib/
+.next/
+out/
+.vercel/
+
+# Generated media / release artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.pptx
+cci-pptx/
+cci-slides/
+cci-slides-img/
+pptx_images/
 
 # IDE
 .vscode/
