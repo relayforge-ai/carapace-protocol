@@ -82,6 +82,23 @@ Canonical package names for `v0.5.0` are `carapace-sdk` on npm and
 
 <br/>
 
+## Audit-Friendly Clone
+
+The current `main` tree is intentionally small, but historical side-branch blobs
+can make a normal full clone slow. For standards review, security scanning, or
+docs work, use a blobless sparse clone:
+
+```bash
+git clone --filter=blob:none --sparse https://github.com/relayforge-ai/carapace-protocol.git
+cd carapace-protocol
+git sparse-checkout set README.md docs carapace python typescript tests
+```
+
+See [Repository Weight](docs/REPOSITORY_WEIGHT.md) for the current weight audit,
+known historical artifact sources, and cleanup plan.
+
+<br/>
+
 ## Quick Start
 
 **JavaScript/TypeScript:**
