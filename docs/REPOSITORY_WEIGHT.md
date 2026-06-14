@@ -13,6 +13,8 @@ Checked on 2026-06-14:
 - The current `main` tree contains 92 files totaling about 942 KB.
 - A metadata-only scan of 305 reachable commits / 286 unique trees found about
   1.26 GB of unique historical blob bytes.
+- After deleting stale merged side-branch refs, the active remote-ref scan
+  contained 40 commits / 28 unique trees / about 1.34 MB of unique blob bytes.
 
 The current default branch is small. The repository weight comes from historical
 objects reachable from side branches and tags, not from the present `main`
@@ -33,6 +35,12 @@ The largest single historical commit observed in the scan was
 `origin/sheldon/dawes-public-publish` at the time of inspection. A smaller
 historical source was committed framework build output under
 `wizard/.next/cache/` in commit `9c5547024d14338b9d5d28cb97b8ad4871aebb25`.
+
+On 2026-06-14, the stale `sheldon/dawes-public-publish` remote branch was
+deleted after confirming it was not protected, was not the default branch, had
+no open pull request, and was the only live ref keeping those large generated
+artifacts reachable. Other merged stale side branches were also deleted, leaving
+`main` and active work branches as the only remote heads.
 
 ## Audit-Friendly Clone
 

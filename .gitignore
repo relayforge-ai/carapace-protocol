@@ -31,6 +31,10 @@ out/
 .vercel/
 
 # Generated media / release artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 *.pptx
 cci-pptx/
 cci-slides/
