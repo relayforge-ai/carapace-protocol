@@ -58,7 +58,10 @@ export function timestampMillis(value: unknown): number {
 
 export function receiptPayload(receipt: Record<string, unknown>): Record<string, unknown> {
   const expected = [...FIELDS, 'call_hash', 'signature'];
-  if (Object.keys(receipt).length !== expected.length || expected.some(k => !(k in receipt))) {
+  // The envelope must contain exactly the enumerable own fields that JSON
+  // transports. Inherited claims cannot stand in for missing signed fields.
+  if (Object.keys(receipt).length !== expected.length ||
+      expected.some(k => !Object.prototype.propertyIsEnumerable.call(receipt, k))) {
     throw new Error('Incomplete or unknown receipt fields');
   }
   if (receipt.receipt_version !== '2' || receipt.domain !== DOMAIN) throw new Error('Unsupported receipt');

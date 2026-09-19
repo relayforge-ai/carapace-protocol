@@ -29,6 +29,27 @@ test('unknown and missing fields fail', async () => {
   delete receipt.tool_version;
   assert.equal(await verifyReceipt(receipt), false);
 });
+
+test('inherited receipt fields cannot authenticate unrelated own claims', async () => {
+  const signed = vector().receipt;
+  const inherited = Object.create(signed);
+  for (let i = 0; i < Object.keys(signed).length; i++) inherited[`unbound_${i}`] = 'approved';
+  assert.equal(await verifyReceipt(inherited), false);
+  // Ordinary JSON envelopes and null-prototype own-field objects still work.
+  assert.equal(await verifyReceipt(JSON.parse(JSON.stringify(signed))), true);
+  assert.equal(await verifyReceipt(Object.assign(Object.create(null), signed)), true);
+});
+
+test('omitted or undefined options serialize as explicit null v2 fields', async () => {
+  for (const options of [{}, {agentId:undefined, toolVersion:undefined, authorizationId:undefined}]) {
+    const receipt = await createReceipt('fixture.read', {}, null, options);
+    const wire = JSON.parse(JSON.stringify(receipt));
+    for (const field of ['agent_id', 'tool_version', 'authorization_id']) {
+      assert.equal(Object.hasOwn(wire, field), true);
+      assert.equal(wire[field], null);
+    }
+  }
+});
 test('ambiguous JSON is rejected', async () => {
   for (const value of [NaN, Infinity, 2**53, undefined, {x:'\ud800'}, new Date()]) {
     await assert.rejects(createReceipt('fixture.read', value));
