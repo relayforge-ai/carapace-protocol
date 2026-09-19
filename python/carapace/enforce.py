@@ -111,29 +111,25 @@ def _extract_capability_ids(card: Any) -> list[str]:
 
 def _check_expiry(card: Any) -> None:
     """Raise CardExpired if the card's TTL has passed."""
-    expires_at = getattr(card, "expires_at", None)
+    expires_at = card.get("expires_at") if isinstance(card, dict) else getattr(card, "expires_at", None)
+    agent_id = card.get("id") if isinstance(card, dict) else getattr(card, "id", None)
     if expires_at is None:
-        return
-
-    if isinstance(expires_at, str):
-        try:
+        return  # Legacy cards without TTL remain supported; require TTL in host policy.
+    try:
+        if isinstance(expires_at, str):
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", expires_at):
+                raise ValueError("Expiry must be an ISO timestamp with timezone")
             exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except ValueError:
-            return  # Malformed expiry — don't block, let verify() catch it
-    elif isinstance(expires_at, datetime):
-        exp_dt = expires_at
-    else:
-        return
-
-    if exp_dt.tzinfo is None:
-        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-
-    now = datetime.now(timezone.utc)
-    if now > exp_dt:
-        raise CardExpired(
-            agent_id=getattr(card, "id", None),
-            expires_at=str(expires_at),
-        )
+        elif isinstance(expires_at, datetime):
+            exp_dt = expires_at
+        else:
+            raise ValueError("Invalid expiry type")
+        if exp_dt.tzinfo is None:
+            raise ValueError("Expiry must include timezone")
+    except (ValueError, TypeError, OverflowError):
+        raise CardExpired(agent_id=agent_id, expires_at=str(expires_at)) from None
+    if datetime.now(timezone.utc) >= exp_dt:
+        raise CardExpired(agent_id=agent_id, expires_at=str(expires_at))
 
 
 def has_capability(card: Any, required: str) -> bool:
@@ -175,7 +171,7 @@ def enforce(card: Any, required: str, *, check_expiry: bool = True) -> None:
     This is the core function — call it before every tool invocation:
 
         enforce(card, "carapace:write:database")
-        # If we get here, the card is valid and declares the capability
+        # If we get here, the card is in scope; verify identity and host authorization separately
         execute_db_write(...)
     """
     if check_expiry:

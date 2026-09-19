@@ -1,3 +1,5 @@
+import { timestampMillis } from './receipt-protocol';
+
 /**
  * Carapace v0.2 — Runtime Capability Enforcement (TypeScript)
  *
@@ -85,14 +87,12 @@ export function extractCapabilityIds(card: CardLike): string[] {
 
 function checkExpiry(card: CardLike): void {
   const expiresAt = card.expires_at;
-  if (!expiresAt) return;
+  if (expiresAt === null || expiresAt === undefined) return;
+  let expiry: number;
+  try { expiry = timestampMillis(expiresAt); }
+  catch { throw new CardExpired(card.id, String(expiresAt)); }
+  if (Date.now() >= expiry) throw new CardExpired(card.id, expiresAt);
 
-  const expDate = new Date(expiresAt);
-  if (isNaN(expDate.getTime())) return; // Malformed — let verify() handle it
-
-  if (Date.now() > expDate.getTime()) {
-    throw new CardExpired(card.id, expiresAt);
-  }
 }
 
 // ── Core Functions ───────────────────────────────────────────────────────────
