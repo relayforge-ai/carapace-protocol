@@ -23,6 +23,8 @@ jobs:
       - name: Test
         run: pytest
         working-directory: python
+      - name: Test root SDK and release parity
+        run: python -m pytest tests
 
   typescript:
     runs-on: ubuntu-latest
@@ -32,7 +34,7 @@ jobs:
         with:
           node-version: "20"
       - name: Install
-        run: npm install
+        run: npm ci
         working-directory: typescript
       - name: Build
         run: npm run build
