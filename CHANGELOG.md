@@ -2,6 +2,20 @@
 
 All notable changes to the Carapace Protocol are documented here.
 
+## [0.5.1] — 2026-09-19
+
+- Reject expired dictionary cards, invalid/timezone-free expiry and exact expiry
+  across enforcement entry points. Absent TTL and explicit opt-out stay compatible.
+- Bind every v2 receipt envelope field to its signature using RFC 8785, including
+  agent, tool, outcome, event time, receipt ID and optional version/permission IDs.
+- Reject legacy receipts as fully verified; preserve them in ARIA as explicitly
+  unverified history. Keep unsigned records distinguishable from authenticated ones.
+- Require explicit v2 server acknowledgement on upload; retry the saved receipt,
+  never the external action. Maintain Python publication-tree parity and shared
+  Python/TypeScript signature and content-hash vectors.
+- **Migration:** deploy ARIA 0.5.1 first. See [receipt migration](docs/RECEIPTS_V2.md)
+  for compatibility, trusted signer binding, idempotency and rollback limits.
+
 ## [0.5.0] — 2026-05-23
 
 ### Added

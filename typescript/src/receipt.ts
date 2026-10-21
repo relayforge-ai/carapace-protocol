@@ -1,16 +1,15 @@
-/**
- * Carapace SDK v0.5.0 — Signed Tool-Call Receipts
- *
- * Receipts provide a cryptographic audit trail for tool calls.
- * They store SHA-256 hashes only — no PII or raw content.
- *
- * Posting receipts to ARIA is best-effort. A failed post MUST NOT
- * block the tool call.
- */
+/** Version 2 receipts: authenticated envelope, not proof that an action occurred. */
+import { DOMAIN, FIELDS, contentHash, receiptPayload } from './receipt-protocol';
 
 export interface ReceiptPayload {
+  receipt_version?: '1' | '2';
+  domain?: string;
+  receipt_id?: string;
+  issued_at?: string;
   tool_id: string;
+  tool_version?: string | null;
   agent_id: string | null;
+  authorization_id?: string | null;
   call_hash: string;
   args_hash: string;
   result_hash: string | null;
@@ -18,137 +17,57 @@ export interface ReceiptPayload {
   public_key: string | null;
   status: 'ok' | 'error';
 }
-
+export interface ReceiptV2Payload extends ReceiptPayload {
+  receipt_version: '2'; domain: string; receipt_id: string; issued_at: string;
+  tool_version: string | null; authorization_id: string | null;
+}
 export interface CreateReceiptOptions {
   agentId?: string;
   status?: 'ok' | 'error';
-  /** Ed25519 key pair from `crypto.subtle.generateKey`. Public key is extracted automatically. */
   keyPair?: { privateKey: CryptoKey; publicKey: CryptoKey };
+  toolVersion?: string;
+  authorizationId?: string;
 }
+export interface PostReceiptOptions { apiKey?: string; timeout?: number; }
 
-export interface PostReceiptOptions {
-  apiKey?: string;
-  timeout?: number;
-}
-
-/** Recursively sort object keys for canonical JSON serialization (RFC 8785 key order). */
-function sortKeys(obj: unknown): unknown {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(sortKeys);
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
-    sorted[key] = sortKeys((obj as Record<string, unknown>)[key]);
-  }
-  return sorted;
-}
-
-/**
- * SHA-256 of deterministic JSON string (keys sorted recursively).
- * Uses SubtleCrypto (available in browser and Node 18+).
- */
-async function sha256Json(obj: unknown): Promise<string> {
-  const canonical = JSON.stringify(sortKeys(obj));
-  const buf = new TextEncoder().encode(canonical);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Create a signed tool-call receipt.
- *
- * When `keyPair` is provided (Ed25519 CryptoKeyPair from `crypto.subtle.generateKey`),
- * the receipt is signed using WebCrypto Ed25519 and `public_key` is populated.
- * Requires Chrome 113+, Firefox 126+, Safari 17+, or Node 20+.
- *
- * The returned object is ready to POST to /aria/v1/receipts.
- */
+/** Persist and retry the SAME returned object; JSON-only inputs use RFC 8785. */
 export async function createReceipt(
-  toolId: string,
-  args: unknown,
-  result: unknown = null,
-  options: CreateReceiptOptions = {},
-): Promise<ReceiptPayload> {
-  const { agentId = null, status = 'ok', keyPair } = options;
-
-  const argsHash = await sha256Json(args);
-  const resultHash = result !== null ? await sha256Json(result) : null;
-  const ts = new Date().toISOString();
-
-  const callHashInput = `${toolId}:${argsHash}:${resultHash ?? ''}:${ts}`;
-  const callHashBuf = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(callHashInput),
-  );
-  const callHash = Array.from(new Uint8Array(callHashBuf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  let signature: string | null = null;
-  let publicKeyHex: string | null = null;
-
-  if (keyPair) {
-    const sigBuf = await crypto.subtle.sign(
-      'Ed25519',
-      keyPair.privateKey,
-      new TextEncoder().encode(callHash),
-    );
-    signature = Array.from(new Uint8Array(sigBuf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const pkBuf = await crypto.subtle.exportKey('raw', keyPair.publicKey);
-    publicKeyHex = Array.from(new Uint8Array(pkBuf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  return {
-    tool_id: toolId,
-    agent_id: agentId,
-    call_hash: callHash,
-    args_hash: argsHash,
-    result_hash: resultHash,
-    signature,
-    public_key: publicKeyHex,
-    status,
+  toolId: string, args: unknown, result: unknown = null, options: CreateReceiptOptions = {},
+): Promise<ReceiptV2Payload> {
+  const { agentId = null, status = 'ok', keyPair, toolVersion = null, authorizationId = null } = options;
+  const receipt: ReceiptV2Payload = {
+    receipt_version: '2', domain: DOMAIN, receipt_id: crypto.randomUUID(), issued_at: new Date().toISOString(),
+    tool_id: toolId, tool_version: toolVersion, agent_id: agentId, authorization_id: authorizationId,
+    args_hash: await contentHash(args), result_hash: result !== null ? await contentHash(result) : null,
+    public_key: null, signature: null, call_hash: '', status,
   };
+  if (keyPair) {
+    const bytes = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+    receipt.public_key = Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  receipt.call_hash = await contentHash(Object.fromEntries(FIELDS.map(field => [field, receipt[field]])));
+  if (keyPair) {
+    const bytes = await crypto.subtle.sign('Ed25519', keyPair.privateKey, new TextEncoder().encode(receipt.call_hash));
+    receipt.signature = Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  receiptPayload(receipt as unknown as Record<string, unknown>);
+  if (keyPair && !await verifyReceipt(receipt)) throw new Error('Mismatched signing key pair');
+  return receipt;
 }
 
-/**
- * Verify a receipt's Ed25519 signature via WebCrypto.
- * Returns false (not throws) on any failure.
- */
-export async function verifyReceipt(
-  receipt: ReceiptPayload,
-  publicKeyHex?: string,
-): Promise<boolean> {
-  const sig = receipt.signature;
-  const pk = publicKeyHex ?? receipt.public_key;
-  const callHash = receipt.call_hash;
-
-  if (!sig || !pk || !callHash) return false;
-
+/** Legacy/unsigned receipts return false. Pin a trusted key to establish issuer identity. */
+export async function verifyReceipt(receipt: unknown, publicKeyHex?: string): Promise<boolean> {
   try {
-    const sigBytes = Uint8Array.from(sig.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
-    const pkBytes = Uint8Array.from(pk.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
-
-    const key = await crypto.subtle.importKey(
-      'raw',
-      pkBytes,
-      { name: 'Ed25519' },
-      false,
-      ['verify'],
-    );
-    return await crypto.subtle.verify(
-      'Ed25519',
-      key,
-      sigBytes,
-      new TextEncoder().encode(callHash),
-    );
-  } catch {
-    return false;
-  }
+    if (!receipt || typeof receipt !== 'object') return false;
+    const data = receipt as Record<string, unknown>;
+    const payload = receiptPayload(data);
+    if (!data.signature || (publicKeyHex !== undefined && publicKeyHex !== data.public_key)) return false;
+    if (await contentHash(payload) !== data.call_hash) return false;
+    const pk = Uint8Array.from((data.public_key as string).match(/.{2}/g)!, b => parseInt(b, 16));
+    const sig = Uint8Array.from((data.signature as string).match(/.{2}/g)!, b => parseInt(b, 16));
+    const key = await crypto.subtle.importKey('raw', pk, { name: 'Ed25519' }, false, ['verify']);
+    return await crypto.subtle.verify('Ed25519', key, sig, new TextEncoder().encode(data.call_hash as string));
+  } catch { return false; }
 }
 
 /**
@@ -176,10 +95,11 @@ export async function postReceipt(
         body: JSON.stringify(receipt),
         signal: controller.signal,
       });
-    } finally {
-      clearTimeout(timer);
-    }
-    return resp.ok;
+    if (!resp.ok) return false;
+    if (receipt.receipt_version !== '2') return true;
+    const ack = await resp.json() as { verification_status?: string; ok?: boolean };
+    return ack.ok === true && ack.verification_status === (receipt.signature ? 'verified_v2' : 'unsigned_v2');
+    } finally { clearTimeout(timer); }
   } catch {
     return false;
   }

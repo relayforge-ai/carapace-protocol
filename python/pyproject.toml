@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "carapace-sdk"
-version = "0.5.0"
+version = "0.5.1"
 description = "Carapace Protocol SDK — trust enforcement, provenance, compliance profiles, and escalation workflows for AI agents"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{name = "Ryan Anderson", email = "ryan@relayforge.tools"}]
 requires-python = ">=3.10"
 dependencies = [
+    "jcs>=0.2.1,<1",
     "cryptography>=41.0.0",
     "canonicaljson>=2.0.0",
     "httpx>=0.25.0",

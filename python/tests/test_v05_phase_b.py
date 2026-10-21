@@ -403,9 +403,9 @@ class TestPostReceipt:
 # ─── SDK top-level import check ────────────────────────────────────
 
 class TestSDKExports:
-    def test_version_is_v050(self):
+    def test_version_is_v051(self):
         import carapace
-        assert carapace.__version__ == "0.5.0"
+        assert carapace.__version__ == "0.5.1"
 
     def test_catalog_types_importable_from_top_level(self):
         from carapace import CatalogEntry, CatalogState, GateResult, fetch_catalog, run_gate_check

@@ -1,0 +1,36 @@
+{
+  "description": "Synthetic test key bytes 0..31; never a live identity",
+  "args": {
+    "unicode": {
+      "😀": "woodcraft",
+      "": "é"
+    },
+    "numbers": [
+      1.0,
+      1e-06,
+      1e-07,
+      -0.0,
+      9007199254740991
+    ],
+    "nested": {
+      "b": true,
+      "a": null
+    }
+  },
+  "receipt": {
+    "receipt_version": "2",
+    "domain": "carapace.tool-receipt.v2",
+    "receipt_id": "shared-vector-001",
+    "issued_at": "2026-01-01T00:00:00.000Z",
+    "tool_id": "fixture.read",
+    "tool_version": "1",
+    "agent_id": "receipt-test-agent",
+    "authorization_id": "fixture-permit",
+    "args_hash": "7f07a6dd1425faa853889e40037c22d980cc2dec55af1b046d87a1d76f090bf8",
+    "result_hash": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+    "status": "ok",
+    "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+    "signature": "7993d8549aea27298d17470c082461a839e99618006a6d25313fcf346cb684e7c3fa44eaf8cbe29985fb316ede77817d8bd4de91b0c5110092d5e649ad69c70e",
+    "call_hash": "f47c6677808822501435ba7abf3e3c57da145edb3f28ecb8d2046ba2a93f2d43"
+  }
+}

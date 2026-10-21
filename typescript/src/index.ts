@@ -136,6 +136,7 @@ export {
   verifyReceipt,
   postReceipt,
   type ReceiptPayload,
+  type ReceiptV2Payload,
   type CreateReceiptOptions,
   type PostReceiptOptions,
 } from './receipt';
